@@ -19,7 +19,9 @@
     "validate": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build:pages"
   },
   "dependencies": {
+    "html2canvas": "^1.4.1",
     "idb-keyval": "^6.3.0",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.24.0",
     "next": "16.2.6",
     "papaparse": "^5.5.4",

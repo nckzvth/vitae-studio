@@ -18,7 +18,6 @@ import {
   Palette,
   PanelLeftClose,
   Plus,
-  Printer,
   Redo2,
   RotateCcw,
   Search,
@@ -44,6 +43,7 @@ import {
   parseCsv,
   rowsToSections,
 } from "@/src/lib/csv";
+import { downloadRenderedPdf } from "@/src/lib/pdf";
 import { deleteProject, loadProject, saveProject } from "@/src/lib/persistence";
 import {
   createEntry,
@@ -144,6 +144,7 @@ export function Studio() {
   const [search, setSearch] = useState("");
   const [importDraft, setImportDraft] = useState<CsvImportDraft | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   const [printPreview, setPrintPreview] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"controls" | "canvas">(
     "canvas",
@@ -153,6 +154,7 @@ export function Studio() {
   const csvInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
   const measurementPaper = useRef<HTMLElement>(null);
+  const paperStack = useRef<HTMLDivElement>(null);
   const [paginationMeasurements, setPaginationMeasurements] =
     useState<PaginationMeasurements | null>(null);
 
@@ -183,12 +185,6 @@ export function Studio() {
     const timer = window.setTimeout(() => setToast(null), 2200);
     return () => window.clearTimeout(timer);
   }, [toast]);
-
-  useEffect(() => {
-    const closePrintPreview = () => setPrintPreview(false);
-    window.addEventListener("afterprint", closePrintPreview);
-    return () => window.removeEventListener("afterprint", closePrintPreview);
-  }, []);
 
   const commit = useCallback(
     (updater: (current: Project) => Project) => {
@@ -369,11 +365,37 @@ export function Studio() {
     );
   };
 
-  const exportPdf = () => {
-    if (!project) return;
-    setPrintPreview(true);
-    setToast("Choose Save as PDF in the print dialog");
-    window.requestAnimationFrame(() => window.print());
+  const exportPdf = async () => {
+    if (!project || isExporting) return;
+    const renderedPages = Array.from(
+      paperStack.current?.querySelectorAll<HTMLElement>(
+        ":scope > .paper:not(.measurement-paper)",
+      ) ?? [],
+    );
+    if (!renderedPages.length) {
+      setToast("PDF export could not find the rendered CV pages");
+      return;
+    }
+
+    setIsExporting(true);
+    setToast("Rendering the exact CV pages…");
+    document.documentElement.classList.add("exporting-pdf");
+    try {
+      await document.fonts.ready;
+      await new Promise<void>((resolve) => {
+        window.requestAnimationFrame(() =>
+          window.requestAnimationFrame(() => resolve()),
+        );
+      });
+      await downloadRenderedPdf(project, renderedPages);
+      setToast("PDF downloaded — no browser headers or footers");
+    } catch (error) {
+      console.error("PDF export failed", error);
+      setToast("PDF export failed. Your project is still safe.");
+    } finally {
+      document.documentElement.classList.remove("exporting-pdf");
+      setIsExporting(false);
+    }
   };
 
   if (!ready)
@@ -529,8 +551,13 @@ export function Studio() {
           <button className="secondary compact" onClick={exportProject}>
             <FileDown size={16} /> Back up
           </button>
-          <button className="primary compact" onClick={exportPdf}>
-            <Download size={16} /> Export PDF
+          <button
+            className="primary compact"
+            onClick={exportPdf}
+            disabled={isExporting}
+          >
+            <Download size={16} />
+            {isExporting ? "Rendering PDF…" : "Export PDF"}
           </button>
         </div>
       </header>
@@ -726,6 +753,7 @@ export function Studio() {
               project={project}
               exportProject={exportProject}
               exportPdf={exportPdf}
+              isExporting={isExporting}
               onOpen={() => projectInput.current?.click()}
               onDelete={async () => {
                 await deleteProject();
@@ -742,12 +770,18 @@ export function Studio() {
         >
           <div className="canvas-toolbar">
             <div className="view-switch">
-              <button className="active">Pages</button>
               <button
+                className={!printPreview ? "active" : ""}
+                onClick={() => setPrintPreview(false)}
+              >
+                Pages
+              </button>
+              <button
+                className={printPreview ? "active" : ""}
                 aria-pressed={printPreview}
                 onClick={() => setPrintPreview(true)}
               >
-                Print view
+                Clean view
               </button>
             </div>
             <div className="zoom-controls">
@@ -769,6 +803,7 @@ export function Studio() {
           </div>
           <div className="paper-scroll">
             <div
+              ref={paperStack}
               className="paper-stack"
               style={{
                 transform: `scale(${zoom / 100})`,
@@ -803,9 +838,11 @@ export function Studio() {
           <div className="print-preview-actions">
             <button
               className="secondary compact"
-              onClick={() => window.print()}
+              onClick={exportPdf}
+              disabled={isExporting}
             >
-              <Printer size={15} /> Save as PDF
+              <Download size={15} />
+              {isExporting ? "Rendering…" : "Download PDF"}
             </button>
             <button
               className="primary compact"
@@ -1630,12 +1667,14 @@ function ExportPanel({
   project,
   exportProject,
   exportPdf,
+  isExporting,
   onOpen,
   onDelete,
 }: {
   project: Project;
   exportProject: () => void;
-  exportPdf: () => void;
+  exportPdf: () => Promise<void>;
+  isExporting: boolean;
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -1650,11 +1689,15 @@ function ExportPanel({
       <p className="panel-intro">
         Everything is created on this device. No CV data is uploaded.
       </p>
-      <button className="export-action primary" onClick={exportPdf}>
+      <button
+        className="export-action primary"
+        onClick={exportPdf}
+        disabled={isExporting}
+      >
         <Download size={18} />
         <span>
-          <strong>Print / Save PDF</strong>
-          <small>Exact preview styling, selectable text</small>
+          <strong>{isExporting ? "Rendering PDF…" : "Download PDF"}</strong>
+          <small>Exact CV pages, no browser print decorations</small>
         </span>
       </button>
       <button className="export-action secondary" onClick={exportProject}>

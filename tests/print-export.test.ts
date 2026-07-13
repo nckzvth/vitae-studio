@@ -10,20 +10,35 @@ const cssSource = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const pdfSource = readFileSync(
+  new URL("../src/lib/pdf.ts", import.meta.url),
+  "utf8",
+);
 
-describe("print-to-PDF export", () => {
-  it("uses the rendered CV pages instead of a second PDF renderer", () => {
-    expect(studioSource).toContain("window.print()");
-    expect(studioSource).toContain("Exact preview styling, selectable text");
-    expect(studioSource).not.toContain("downloadPdf");
-    expect(packageJson.dependencies).not.toHaveProperty("jspdf");
+describe("direct PDF export", () => {
+  it("downloads the rendered CV pages without invoking browser printing", () => {
+    expect(studioSource).toContain(
+      "downloadRenderedPdf(project, renderedPages)",
+    );
+    expect(studioSource).toContain(":scope > .paper:not(.measurement-paper)");
+    expect(studioSource).not.toContain("window.print");
+    expect(studioSource).not.toContain("Save as PDF in the print dialog");
+    expect(packageJson.dependencies).toHaveProperty("html2canvas");
+    expect(packageJson.dependencies).toHaveProperty("jspdf");
   });
 
-  it("defines exact Letter and A4 print pages with preserved colors", () => {
-    expect(cssSource).toContain("@page vitae-letter");
-    expect(cssSource).toContain("size: 8.5in 11in");
-    expect(cssSource).toContain("@page vitae-a4");
-    expect(cssSource).toContain("size: 210mm 297mm");
-    expect(cssSource).toContain("print-color-adjust: exact");
+  it("uses exact page images plus an invisible searchable text layer", () => {
+    expect(pdfSource).toContain("html2canvas(pageElement");
+    expect(pdfSource).toContain('pdf.addImage(\n      canvas,\n      "PNG"');
+    expect(pdfSource).toContain("new GState({ opacity: 0 })");
+    expect(pdfSource).toContain("pdf.link(");
+    expect(pdfSource).toContain("letter: { width: 215.9, height: 279.4 }");
+    expect(pdfSource).toContain("a4: { width: 210, height: 297 }");
+  });
+
+  it("removes editor-only decoration during capture", () => {
+    expect(cssSource).toContain(".exporting-pdf .paper-stack");
+    expect(cssSource).toContain(".exporting-pdf .selected-element");
+    expect(cssSource).toContain(".exporting-pdf .paper.show-guides::after");
   });
 });

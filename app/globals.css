@@ -1532,75 +1532,18 @@ a:focus-visible {
   display: none;
 }
 
-@page vitae-letter {
-  size: 8.5in 11in;
-  margin: 0;
+.exporting-pdf .paper-stack {
+  transform: none !important;
 }
-
-@page vitae-a4 {
-  size: 210mm 297mm;
-  margin: 0;
+.exporting-pdf .paper {
+  box-shadow: none !important;
 }
-
-@media print {
-  html,
-  body {
-    width: auto;
-    min-height: 0;
-    background: white;
-  }
-  .studio-header,
-  .mode-rail,
-  .structure-panel,
-  .inspector-panel,
-  .canvas-toolbar,
-  .mobile-switch {
-    display: none !important;
-  }
-  .print-preview-actions {
-    display: none !important;
-  }
-  .measurement-paper {
-    display: none !important;
-  }
-  .selected-element {
-    outline: none !important;
-    background: transparent !important;
-  }
-  .studio-shell,
-  .studio-body,
-  .canvas-area,
-  .paper-scroll {
-    display: block;
-    height: auto;
-    overflow: visible;
-    background: white;
-    padding: 0;
-  }
-  .paper-stack {
-    transform: none !important;
-    gap: 0;
-  }
-  .paper {
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-    box-shadow: none;
-    break-after: page;
-    margin: 0;
-  }
-  .paper.letter {
-    page: vitae-letter;
-    width: 8.5in;
-    height: 11in;
-  }
-  .paper.a4 {
-    page: vitae-a4;
-    width: 210mm;
-    height: 297mm;
-  }
-  .paper:last-child {
-    break-after: auto;
-  }
+.exporting-pdf .selected-element {
+  outline: none !important;
+  background: transparent !important;
+}
+.exporting-pdf .paper.show-guides::after {
+  display: none !important;
 }
 
 @media (max-width: 1020px) {

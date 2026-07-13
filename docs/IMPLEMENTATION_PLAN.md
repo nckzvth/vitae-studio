@@ -14,7 +14,7 @@ The name is specific enough to be memorable without implying a rigid template ge
 - **CSS custom properties:** semantic document tokens make presets and granular overrides use the same rendering surface.
 - **Papa Parse:** mature in-browser CSV delimiter, header, quoting, and multiline parsing.
 - **IndexedDB via idb-keyval:** local autosave without sending CV content to a service.
-- **Browser print-to-PDF:** the exact semantic HTML preview is the export surface, preserving preset styling, pagination, colors, columns, and selectable text without a second renderer.
+- **html2canvas + jsPDF container:** capture each exact rendered paper surface, place it edge-to-edge on a correctly sized PDF page, then add an invisible searchable text layer and clickable link regions. The browser print dialog is never used.
 - **Vitest + ESLint + TypeScript + Prettier:** fast unit validation and reproducible CI gates.
 - **GitHub Actions + Pages artifact deployment:** validation runs before the static export is uploaded, so a failed build cannot replace production.
 
@@ -22,7 +22,7 @@ This stack favors privacy, static-hosting compatibility, and maintainability. A 
 
 ## Hosting and repository strategy
 
-Next's static export runs with a repository-aware `basePath` and `assetPrefix` in CI. The app uses a single route, avoiding GitHub Pages deep-link fallback problems. Relative runtime assets and browser-native print output avoid worker and cross-origin dependencies. The workflow is custom-domain ready: setting `NEXT_PUBLIC_BASE_PATH` to an empty value and adding a `CNAME` file is sufficient for a future domain.
+Next's static export runs with a repository-aware `basePath` and `assetPrefix` in CI. The app uses a single route, avoiding GitHub Pages deep-link fallback problems. Relative runtime assets and client-side PDF download avoid server, worker, print-dialog, and cross-origin dependencies. The workflow is custom-domain ready: setting `NEXT_PUBLIC_BASE_PATH` to an empty value and adding a `CNAME` file is sufficient for a future domain.
 
 ## Architecture
 
@@ -37,7 +37,7 @@ parser + alias mapper ──► canonical Project model ──► IndexedDB auto
                  content editor          measured paper pages
                                                    │
                                                    ▼
-                                           browser print / PDF
+                                          direct PDF download
 ```
 
 Modules are split into model/types, built-in fictional data, import normalization, persistence, pagination, and the UI. CSV rows never become layout-specific HTML.
@@ -70,17 +70,17 @@ The preview uses fixed Letter/A4 page surfaces, shared tokens, measured content 
 
 Options considered:
 
-| Approach              | Decision                                                                                      |
-| --------------------- | --------------------------------------------------------------------------------------------- |
-| Browser print CSS     | Selected: the only export path that prints the exact semantic preview with selectable text.   |
-| HTML-to-canvas/PDF    | Rejected because full-page rasterization harms selection, links, and accessibility.           |
-| Paged-media polyfill  | Promising, but adds layout/runtime complexity and browser-specific risk.                      |
-| React-PDF             | Strong structured renderer, but duplicates DOM layout and increases bundle/font complexity.   |
-| PDFKit                | Viable but relatively heavy for browser use.                                                  |
-| Separate PDF renderer | Rejected because duplicated typography and pagination inevitably drift from the on-screen CV. |
-| Shared rendered pages | Implemented: measured DOM pages are both the preview and the browser print-to-PDF source.     |
+| Approach              | Decision                                                                                              |
+| --------------------- | ----------------------------------------------------------------------------------------------------- |
+| Browser print CSS     | Rejected after Safari injected webpage headers, footers, timestamps, URLs, and shifted pages.         |
+| HTML-to-canvas/PDF    | Selected for visual fidelity, with a separate invisible text layer and link annotations added.        |
+| Paged-media polyfill  | Adds layout/runtime complexity and still depends on browser printing behavior.                        |
+| React-PDF             | Duplicates DOM layout and increases bundle/font complexity.                                           |
+| PDFKit                | Viable but requires a second layout implementation.                                                   |
+| Separate PDF renderer | Rejected because duplicated typography and pagination inevitably drift from the on-screen CV.         |
+| Shared rendered pages | Implemented: measured DOM pages are captured directly and become the visual surface of each PDF page. |
 
-The first release now uses measured semantic HTML pages for both preview and PDF output. Named Letter/A4 page rules, exact color printing, and print-only chrome removal keep export and preview on one rendering path.
+The app uses measured semantic HTML pages for both preview and PDF output. Each page is captured at high resolution and placed edge-to-edge on an exact Letter/A4 PDF page. A zero-opacity text layer preserves search and extraction, and link annotations remain clickable. Editor selection and margin guides are removed only during capture.
 
 ## Persistence and privacy
 
@@ -132,7 +132,7 @@ Every phase ends with validation and a GitHub Pages deployment.
 ## Main risks
 
 - DOM and PDF font metrics can diverge; mitigate with a shared layout engine and embedded fonts.
-- Browser print settings vary by platform; named page sizes and zero-margin page rules provide deterministic document geometry while the export UI tells users to choose Save as PDF.
+- Large, image-faithful PDFs can consume browser memory; pages are captured and released one at a time at a bounded 2x scale.
 - Complex multi-column pagination is difficult; ship conservative single-column rules first and validate each new layout.
 - User-selected colors or sizes can create inaccessible documents; provide warnings without restricting intentional choices.
 - IndexedDB can be cleared by the browser; keep backup export prominent and never imply cloud storage.
