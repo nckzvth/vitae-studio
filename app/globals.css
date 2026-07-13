@@ -727,6 +727,48 @@ a:focus-visible {
   overflow: auto;
   padding: 45px 45px 100px;
 }
+.print-preview-actions {
+  display: none;
+}
+.studio-shell.print-preview {
+  display: block;
+  height: 100vh;
+}
+.print-preview .studio-header,
+.print-preview .mode-rail,
+.print-preview .structure-panel,
+.print-preview .inspector-panel,
+.print-preview .canvas-toolbar,
+.print-preview .mobile-switch {
+  display: none !important;
+}
+.print-preview .studio-body {
+  display: block;
+  height: 100vh;
+}
+.print-preview .canvas-area {
+  display: block;
+  height: 100vh;
+  background: #e2e6e2;
+}
+.print-preview .paper-scroll {
+  height: 100vh;
+  padding-top: 34px;
+}
+.print-preview .print-preview-actions {
+  position: fixed;
+  z-index: 50;
+  top: 16px;
+  right: 18px;
+  display: flex;
+  gap: 7px;
+  padding: 6px;
+  border: 1px solid var(--line-dark);
+  border-radius: 8px;
+  background: rgba(250, 251, 249, 0.94);
+  box-shadow: 0 8px 26px rgba(24, 40, 35, 0.14);
+  backdrop-filter: blur(10px);
+}
 .paper-stack {
   width: max-content;
   margin: 0 auto;
@@ -1450,6 +1492,9 @@ a:focus-visible {
   .inspector-panel,
   .canvas-toolbar,
   .mobile-switch {
+    display: none !important;
+  }
+  .print-preview-actions {
     display: none !important;
   }
   .studio-shell,

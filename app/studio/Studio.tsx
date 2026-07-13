@@ -18,6 +18,7 @@ import {
   Palette,
   PanelLeftClose,
   Plus,
+  Printer,
   Redo2,
   RotateCcw,
   Search,
@@ -119,6 +120,7 @@ export function Studio() {
   const [importDraft, setImportDraft] = useState<CsvImportDraft | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [printPreview, setPrintPreview] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"controls" | "canvas">(
     "canvas",
   );
@@ -419,7 +421,7 @@ export function Studio() {
   }
 
   return (
-    <main className="studio-shell">
+    <main className={`studio-shell ${printPreview ? "print-preview" : ""}`}>
       <header className="studio-header">
         <Logo compact />
         <div className="document-title">
@@ -667,7 +669,12 @@ export function Studio() {
           <div className="canvas-toolbar">
             <div className="view-switch">
               <button className="active">Pages</button>
-              <button onClick={() => window.print()}>Print view</button>
+              <button
+                aria-pressed={printPreview}
+                onClick={() => setPrintPreview(true)}
+              >
+                Print view
+              </button>
             </div>
             <div className="zoom-controls">
               <button
@@ -705,6 +712,20 @@ export function Studio() {
                 />
               ))}
             </div>
+          </div>
+          <div className="print-preview-actions">
+            <button
+              className="secondary compact"
+              onClick={() => window.print()}
+            >
+              <Printer size={15} /> Print
+            </button>
+            <button
+              className="primary compact"
+              onClick={() => setPrintPreview(false)}
+            >
+              <X size={15} /> Exit preview
+            </button>
           </div>
         </section>
 
