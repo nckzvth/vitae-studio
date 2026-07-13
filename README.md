@@ -7,9 +7,10 @@ Vitae Studio is a private, local-first web app for turning flexible CSV data int
 ## What ships in the first release
 
 - Blank and fictional demonstration projects
-- Flexible CSV parsing with aliases, mapping confidence, raw preview, and append-safe import
+- Flexible CSV parsing with profile/contact fields, section notes, aliases, mapping confidence, raw preview, and append-safe import
+- Downloadable universal CSV template for starting a complete CV from scratch
 - Structured sections and entries with ordering, visibility, custom sections, notes, and bullets
-- Four meaningfully different presets plus color, typography, spacing, margin, paper, and layout controls
+- Four meaningfully different presets plus color, typography, spacing, margin, paper, and layout controls, with cross-preset pagination regression coverage
 - Letter and A4 paper preview with zoom, page numbers, margin guides, and responsive mode switching
 - Searchable client-generated PDF export
 - IndexedDB autosave and versioned `.vitae.json` backup/restore

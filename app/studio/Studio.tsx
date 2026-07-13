@@ -31,7 +31,12 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { canonicalFields, parseCsv, rowsToSections } from "@/src/lib/csv";
+import {
+  canonicalFieldLabels,
+  canonicalFields,
+  parseCsv,
+  rowsToSections,
+} from "@/src/lib/csv";
 import { downloadPdf } from "@/src/lib/pdf";
 import { deleteProject, loadProject, saveProject } from "@/src/lib/persistence";
 import {
@@ -86,7 +91,7 @@ function downloadText(text: string, filename: string, type: string) {
 }
 
 function mergeImported(project: Project, draft: CsvImportDraft) {
-  const { sections, source } = rowsToSections(draft);
+  const { sections, source, profile } = rowsToSections(draft);
   const nextSections = [...project.sections];
   sections.forEach((incoming) => {
     const existingIndex = nextSections.findIndex(
@@ -103,6 +108,15 @@ function mergeImported(project: Project, draft: CsvImportDraft) {
   });
   return {
     ...project,
+    profile:
+      profile && project.profile.fullName === "Your name"
+        ? {
+            ...project.profile,
+            ...profile,
+            professionalTitle: profile.professionalTitle ?? "",
+            contacts: profile.contacts ?? project.profile.contacts,
+          }
+        : project.profile,
     sections: nextSections,
     imports: [...project.imports, source],
     updatedAt: new Date().toISOString(),
@@ -356,6 +370,9 @@ export function Studio() {
             <button onClick={() => projectInput.current?.click()}>
               <FolderOpen size={15} /> Open saved project
             </button>
+            <a href="templates/universal-cv-template.csv" download>
+              <FileDown size={15} /> Download CSV template
+            </a>
           </div>
         </section>
         <section className="start-preview" aria-label="Product preview">
@@ -641,6 +658,13 @@ export function Studio() {
               >
                 <Plus size={15} /> New custom section
               </button>
+              <a
+                className="template-download"
+                href="templates/universal-cv-template.csv"
+                download
+              >
+                <FileDown size={14} /> Download CSV template
+              </a>
             </>
           )}
           {mode === "design" && (
@@ -1627,9 +1651,7 @@ function ImportDialog({
               >
                 {canonicalFields.map((field) => (
                   <option value={field} key={field}>
-                    {field === "skip"
-                      ? "Skip this column"
-                      : field[0].toUpperCase() + field.slice(1)}
+                    {canonicalFieldLabels[field]}
                   </option>
                 ))}
               </select>

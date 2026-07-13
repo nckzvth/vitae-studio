@@ -120,12 +120,28 @@ function estimateEntryHeight(entry: CVEntry, project: Project) {
 }
 
 function estimateSectionHeadingHeight(section: CVSection, project: Project) {
+  const { width } = PAPER_DIMENSIONS[project.layout.paper];
+  const fullWidth = width - project.layout.margin * 2;
+  const contentWidth =
+    project.layout.mode === "two-column" ? (fullWidth - 28) / 2 : fullWidth;
+  const headingCharactersPerLine = Math.max(
+    18,
+    Math.floor(contentWidth / (project.theme.headingSize * 0.62)),
+  );
+  const noteCharactersPerLine = Math.max(
+    24,
+    Math.floor(contentWidth / (project.theme.bodySize * 0.52)),
+  );
   const headingLineHeight = project.theme.headingSize * 1.45;
   const noteLineHeight = project.theme.bodySize * project.theme.lineHeight;
   const noteHeight = section.note
-    ? wrappedLines(section.note, 92) * noteLineHeight + 7
+    ? wrappedLines(section.note, noteCharactersPerLine) * noteLineHeight + 7
     : 0;
-  return headingLineHeight + 15 + noteHeight;
+  return (
+    wrappedLines(section.title, headingCharactersPerLine) * headingLineHeight +
+    15 +
+    noteHeight
+  );
 }
 
 function estimateHeaderHeight(project: Project) {
@@ -156,13 +172,17 @@ function estimateHeaderHeight(project: Project) {
  */
 export function paginateProject(project: Project) {
   const { height } = PAPER_DIMENSIONS[project.layout.paper];
-  const pageCapacity =
+  const columnCount = project.layout.mode === "two-column" ? 2 : 1;
+  const singleColumnCapacity =
     height -
     project.layout.margin * 2 -
     (project.layout.showPageNumbers ? 34 : 12);
+  const pageCapacity = singleColumnCapacity * columnCount;
   const pages: CVSection[][] = [[]];
   let pageIndex = 0;
-  let used = estimateHeaderHeight(project);
+  // The identity header spans every column, so its height consumes the same
+  // vertical space from each column's independent capacity.
+  let used = estimateHeaderHeight(project) * columnCount;
 
   const beginPage = () => {
     pages.push([]);

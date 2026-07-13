@@ -189,7 +189,8 @@ a:focus-visible {
   margin-top: 22px;
   gap: 25px;
 }
-.quiet-actions button {
+.quiet-actions button,
+.quiet-actions a {
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -198,8 +199,10 @@ a:focus-visible {
   gap: 7px;
   align-items: center;
   font-size: 12px;
+  text-decoration: none;
 }
-.quiet-actions button:hover {
+.quiet-actions button:hover,
+.quiet-actions a:hover {
   color: var(--accent);
 }
 .primary,
@@ -665,6 +668,23 @@ a:focus-visible {
   align-items: center;
   justify-content: center;
   gap: 5px;
+}
+.template-download {
+  width: 100%;
+  min-height: 32px;
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 9px;
+  text-decoration: none;
+}
+.template-download:hover {
+  background: #f0f3f0;
+  color: var(--accent);
 }
 
 .canvas-area {

@@ -1,26 +1,36 @@
 import Papa from "papaparse";
 import type {
+  ContactItem,
   CsvImportDraft,
   CVEntry,
   CVSection,
   ImportSource,
+  Project,
 } from "@/src/model/types";
 
 export const canonicalFields = [
   "skip",
   "section",
+  "sectionNote",
   "title",
   "organization",
   "location",
   "date",
   "summary",
   "bullets",
+  "fullName",
+  "professionalTitle",
+  "email",
+  "phone",
+  "address",
+  "website",
 ] as const;
 
 export type CanonicalField = (typeof canonicalFields)[number];
 
 const aliases: Record<Exclude<CanonicalField, "skip">, string[]> = {
   section: ["section", "category", "type", "group"],
+  sectionNote: ["section note", "legend", "annotation", "section annotation"],
   title: [
     "title",
     "role",
@@ -67,10 +77,43 @@ const aliases: Record<Exclude<CanonicalField, "skip">, string[]> = {
     "accomplishments",
     "highlights",
   ],
+  fullName: ["full name", "person name", "candidate name", "profile name"],
+  professionalTitle: [
+    "professional title",
+    "headline",
+    "profile title",
+    "professional headline",
+  ],
+  email: ["email", "email address", "e mail"],
+  phone: ["phone", "phone number", "telephone", "mobile"],
+  address: ["address", "mailing address", "street address"],
+  website: ["website", "portfolio", "profile link", "personal website"],
 };
 
-const normalize = (value: string) =>
-  value.toLowerCase().trim().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+export const canonicalFieldLabels: Record<CanonicalField, string> = {
+  skip: "Skip this column",
+  section: "Section",
+  sectionNote: "Section note / legend",
+  title: "Title or role",
+  organization: "Organization",
+  location: "Location",
+  date: "Date",
+  summary: "Summary / details",
+  bullets: "Bullet points",
+  fullName: "Profile: full name",
+  professionalTitle: "Profile: professional title",
+  email: "Profile: email",
+  phone: "Profile: phone",
+  address: "Profile: address",
+  website: "Profile: website",
+};
+
+const normalize = (value: unknown) =>
+  String(value ?? "")
+    .toLowerCase()
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
 
 export function suggestField(header: string): {
   field: CanonicalField;
@@ -139,10 +182,62 @@ export function rowsToSections(
   draft: CsvImportDraft,
   fallbackSection = "Imported",
 ) {
-  const groups = new Map<string, CVEntry[]>();
+  const groups = new Map<string, { entries: CVEntry[]; note?: string }>();
+  const profileContacts: ContactItem[] = [];
+  let profile: Partial<Project["profile"]> | undefined;
   draft.rows.forEach((row) => {
     const sectionName =
       getMapped(row, draft.mapping, "section") || fallbackSection;
+    const normalizedSection = normalize(sectionName);
+    const fullName = getMapped(row, draft.mapping, "fullName");
+    const professionalTitle = getMapped(
+      row,
+      draft.mapping,
+      "professionalTitle",
+    );
+    const profileValues = {
+      Email: getMapped(row, draft.mapping, "email"),
+      Phone: getMapped(row, draft.mapping, "phone"),
+      Address: getMapped(row, draft.mapping, "address"),
+      Website: getMapped(row, draft.mapping, "website"),
+    };
+    const hasProfileFields =
+      Boolean(fullName || professionalTitle) ||
+      Object.values(profileValues).some(Boolean);
+    const isProfileRow =
+      ["profile", "personal", "contact", "identity"].includes(
+        normalizedSection,
+      ) || hasProfileFields;
+
+    if (isProfileRow) {
+      Object.entries(profileValues).forEach(([label, value]) => {
+        if (!value) return;
+        profileContacts.push({
+          id: crypto.randomUUID(),
+          label,
+          value,
+          href:
+            label === "Email"
+              ? `mailto:${value}`
+              : label === "Website"
+                ? value
+                : undefined,
+        });
+      });
+      const summary = getMapped(row, draft.mapping, "summary");
+      profile = {
+        ...profile,
+        fullName:
+          fullName ||
+          getMapped(row, draft.mapping, "title") ||
+          profile?.fullName,
+        professionalTitle: professionalTitle || profile?.professionalTitle,
+        summary: summary || profile?.summary,
+        contacts: profileContacts,
+      };
+      return;
+    }
+
     const bulletsText = getMapped(row, draft.mapping, "bullets");
     const entry: CVEntry = {
       id: crypto.randomUUID(),
@@ -164,16 +259,22 @@ export function rowsToSections(
         ),
       ),
     };
-    groups.set(sectionName, [...(groups.get(sectionName) ?? []), entry]);
+    const existing = groups.get(sectionName) ?? { entries: [] };
+    groups.set(sectionName, {
+      entries: [...existing.entries, entry],
+      note:
+        existing.note ||
+        getMapped(row, draft.mapping, "sectionNote") ||
+        undefined,
+    });
   });
-  const sections: CVSection[] = [...groups.entries()].map(
-    ([title, entries]) => ({
-      id: crypto.randomUUID(),
-      title,
-      kind: normalize(title).replace(/\s+/g, "-"),
-      entries,
-    }),
-  );
+  const sections: CVSection[] = [...groups.entries()].map(([title, group]) => ({
+    id: crypto.randomUUID(),
+    title,
+    kind: normalize(title).replace(/\s+/g, "-"),
+    note: group.note,
+    entries: group.entries,
+  }));
   const source: ImportSource = {
     id: crypto.randomUUID(),
     filename: draft.filename,
@@ -181,7 +282,7 @@ export function rowsToSections(
     rowCount: draft.rows.length,
     mapping: draft.mapping,
   };
-  return { sections, source };
+  return { sections, source, profile };
 }
 
 export function stableFingerprint(row: Record<string, string>) {

@@ -1,4 +1,11 @@
-section,title,organization,location,date,summary,bullets
-Experience,Research Associate,Northbridge Institute,"Cambridge, MA",2024 — Present,Study neighborhood climate resilience,"Built a reproducible data pipeline;Presented findings to community partners"
-Education,"M.S., Data Science",Lakeview University,"Chicago, IL",2024,Thesis on interpretable spatial models,
-Honors,Community Research Fellowship,Civic Data Society,,2023,Competitive fellowship supporting public-interest research,
+section,section_note,title,organization,location,date,summary,bullets,full_name,professional_title,email,phone,address,website
+Profile,,,,,,A concise optional professional summary.,,Avery Morgan,Public Health Researcher,avery.morgan@example.com,(555) 010-2040,"Boston, MA",https://example.com
+Education,,"M.P.H., Epidemiology",Northbridge University,"Boston, MA","Expected 2027","Concentration: Community Health; GPA: 4.0",,,,,,,
+Research Experience,"Note: * Student researcher; ** Faculty advisor",Research Assistant,"Community Health Lab, Northbridge University","Boston, MA","2025 - Present","Study neighborhood access to preventive health resources.","Co-developed the research protocol and survey instrument.
+Coordinated participant communication and maintained study records.
+Presented preliminary findings at a fictional campus research symposium.",,,,,,
+Professional Experience,,Program Coordinator,Harbor Learning Center,"Boston, MA","2023 - 2025","Supported daily program operations and community partnerships.","Managed scheduling and stakeholder communication.
+Created clear documentation and improved intake workflows.",,,,,,
+Honors and Awards,,Community Research Fellowship,Civic Data Society,,2026,"Competitive fellowship supporting public-interest research.",,,,,,,
+Skills,,Research Methods,,,,"Survey design, qualitative interviewing, literature review",,,,,,,
+Professional Memberships,,Student Member,Public Health Association,,"2025 - Present",,,,,,,,
