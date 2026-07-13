@@ -44,7 +44,6 @@ import {
   parseCsv,
   rowsToSections,
 } from "@/src/lib/csv";
-import { downloadPdf } from "@/src/lib/pdf";
 import { deleteProject, loadProject, saveProject } from "@/src/lib/persistence";
 import {
   createEntry,
@@ -145,7 +144,6 @@ export function Studio() {
   const [search, setSearch] = useState("");
   const [importDraft, setImportDraft] = useState<CsvImportDraft | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [isExporting, setIsExporting] = useState(false);
   const [printPreview, setPrintPreview] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<"controls" | "canvas">(
     "canvas",
@@ -185,6 +183,12 @@ export function Studio() {
     const timer = window.setTimeout(() => setToast(null), 2200);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    const closePrintPreview = () => setPrintPreview(false);
+    window.addEventListener("afterprint", closePrintPreview);
+    return () => window.removeEventListener("afterprint", closePrintPreview);
+  }, []);
 
   const commit = useCallback(
     (updater: (current: Project) => Project) => {
@@ -365,17 +369,11 @@ export function Studio() {
     );
   };
 
-  const exportPdf = async () => {
+  const exportPdf = () => {
     if (!project) return;
-    setIsExporting(true);
-    try {
-      await downloadPdf(project);
-      setToast("PDF created — your project remains private");
-    } catch {
-      setToast("PDF generation failed. Your project is still safe.");
-    } finally {
-      setIsExporting(false);
-    }
+    setPrintPreview(true);
+    setToast("Choose Save as PDF in the print dialog");
+    window.requestAnimationFrame(() => window.print());
   };
 
   if (!ready)
@@ -531,12 +529,8 @@ export function Studio() {
           <button className="secondary compact" onClick={exportProject}>
             <FileDown size={16} /> Back up
           </button>
-          <button
-            className="primary compact"
-            onClick={exportPdf}
-            disabled={isExporting}
-          >
-            <Download size={16} /> {isExporting ? "Preparing…" : "Export PDF"}
+          <button className="primary compact" onClick={exportPdf}>
+            <Download size={16} /> Export PDF
           </button>
         </div>
       </header>
@@ -732,7 +726,6 @@ export function Studio() {
               project={project}
               exportProject={exportProject}
               exportPdf={exportPdf}
-              isExporting={isExporting}
               onOpen={() => projectInput.current?.click()}
               onDelete={async () => {
                 await deleteProject();
@@ -812,7 +805,7 @@ export function Studio() {
               className="secondary compact"
               onClick={() => window.print()}
             >
-              <Printer size={15} /> Print
+              <Printer size={15} /> Save as PDF
             </button>
             <button
               className="primary compact"
@@ -1637,14 +1630,12 @@ function ExportPanel({
   project,
   exportProject,
   exportPdf,
-  isExporting,
   onOpen,
   onDelete,
 }: {
   project: Project;
   exportProject: () => void;
   exportPdf: () => void;
-  isExporting: boolean;
   onOpen: () => void;
   onDelete: () => void;
 }) {
@@ -1659,15 +1650,11 @@ function ExportPanel({
       <p className="panel-intro">
         Everything is created on this device. No CV data is uploaded.
       </p>
-      <button
-        className="export-action primary"
-        onClick={exportPdf}
-        disabled={isExporting}
-      >
+      <button className="export-action primary" onClick={exportPdf}>
         <Download size={18} />
         <span>
-          <strong>{isExporting ? "Preparing PDF…" : "Download PDF"}</strong>
-          <small>Searchable, selectable text</small>
+          <strong>Print / Save PDF</strong>
+          <small>Exact preview styling, selectable text</small>
         </span>
       </button>
       <button className="export-action secondary" onClick={exportProject}>

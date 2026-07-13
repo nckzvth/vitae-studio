@@ -15,3 +15,4 @@
 - Added downloadable universal CSV templates and profile/section-note import support.
 - Corrected two-column pagination capacity and added regression coverage for every preset.
 - Replaced estimate-only page breaks with measured compact flow, orphan-heading protection, explicit conservative/repeated-heading toggles, deterministic two-column columns, and lossless long-entry continuation in preview and PDF output.
+- Removed the divergent PDF renderer; PDF export now prints the exact styled preview pages with selectable text and explicit Letter/A4 page rules.

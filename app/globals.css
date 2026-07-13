@@ -1532,7 +1532,23 @@ a:focus-visible {
   display: none;
 }
 
+@page vitae-letter {
+  size: 8.5in 11in;
+  margin: 0;
+}
+
+@page vitae-a4 {
+  size: 210mm 297mm;
+  margin: 0;
+}
+
 @media print {
+  html,
+  body {
+    width: auto;
+    min-height: 0;
+    background: white;
+  }
   .studio-header,
   .mode-rail,
   .structure-panel,
@@ -1542,6 +1558,9 @@ a:focus-visible {
     display: none !important;
   }
   .print-preview-actions {
+    display: none !important;
+  }
+  .measurement-paper {
     display: none !important;
   }
   .selected-element {
@@ -1563,9 +1582,24 @@ a:focus-visible {
     gap: 0;
   }
   .paper {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
     box-shadow: none;
     break-after: page;
     margin: 0;
+  }
+  .paper.letter {
+    page: vitae-letter;
+    width: 8.5in;
+    height: 11in;
+  }
+  .paper.a4 {
+    page: vitae-a4;
+    width: 210mm;
+    height: 297mm;
+  }
+  .paper:last-child {
+    break-after: auto;
   }
 }
 

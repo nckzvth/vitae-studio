@@ -14,7 +14,7 @@ The name is specific enough to be memorable without implying a rigid template ge
 - **CSS custom properties:** semantic document tokens make presets and granular overrides use the same rendering surface.
 - **Papa Parse:** mature in-browser CSV delimiter, header, quoting, and multiline parsing.
 - **IndexedDB via idb-keyval:** local autosave without sending CV content to a service.
-- **jsPDF:** client-side, searchable vector-text PDFs that work from static hosting. The MVP renderer shares project content and design tokens with the preview; a richer shared pagination engine is a later phase.
+- **Browser print-to-PDF:** the exact semantic HTML preview is the export surface, preserving preset styling, pagination, colors, columns, and selectable text without a second renderer.
 - **Vitest + ESLint + TypeScript + Prettier:** fast unit validation and reproducible CI gates.
 - **GitHub Actions + Pages artifact deployment:** validation runs before the static export is uploaded, so a failed build cannot replace production.
 
@@ -22,7 +22,7 @@ This stack favors privacy, static-hosting compatibility, and maintainability. A 
 
 ## Hosting and repository strategy
 
-Next's static export runs with a repository-aware `basePath` and `assetPrefix` in CI. The app uses a single route, avoiding GitHub Pages deep-link fallback problems. Relative runtime assets and client-side PDF generation avoid worker and cross-origin dependencies. The workflow is custom-domain ready: setting `NEXT_PUBLIC_BASE_PATH` to an empty value and adding a `CNAME` file is sufficient for a future domain.
+Next's static export runs with a repository-aware `basePath` and `assetPrefix` in CI. The app uses a single route, avoiding GitHub Pages deep-link fallback problems. Relative runtime assets and browser-native print output avoid worker and cross-origin dependencies. The workflow is custom-domain ready: setting `NEXT_PUBLIC_BASE_PATH` to an empty value and adding a `CNAME` file is sufficient for a future domain.
 
 ## Architecture
 
@@ -32,14 +32,15 @@ CSV / project file
        ▼
 parser + alias mapper ──► canonical Project model ──► IndexedDB autosave
                                       │
-                       ┌──────────────┼──────────────┐
-                       ▼              ▼              ▼
-                 content editor   paper preview   PDF renderer
-                                      ▲              ▲
-                                      └── theme/layout tokens ──┘
+                       ┌──────────────┴──────────────┐
+                       ▼                             ▼
+                 content editor          measured paper pages
+                                                   │
+                                                   ▼
+                                           browser print / PDF
 ```
 
-Modules are split into model/types, built-in fictional data, import normalization, persistence, PDF output, and the UI. CSV rows never become layout-specific HTML.
+Modules are split into model/types, built-in fictional data, import normalization, persistence, pagination, and the UI. CSV rows never become layout-specific HTML.
 
 ## Canonical data model
 
@@ -65,21 +66,21 @@ Presets are complete token bundles, not accent swaps. Theme tokens cover font st
 
 ## Preview, pagination, and PDF
 
-The MVP preview uses fixed Letter/A4 page surfaces, shared tokens, content-height-aware grouping, page boundaries, zoom, fit controls, and print-safe CSS. Page estimates account for active typography, widths, margins, headings, and wrapped content; headings remain attached to their first entry.
+The preview uses fixed Letter/A4 page surfaces, shared tokens, measured content grouping, page boundaries, zoom, fit controls, and print-safe CSS. Live browser measurements account for active typography, widths, margins, headings, and wrapped content; headings remain attached to their first entry.
 
 Options considered:
 
-| Approach                    | Decision                                                                                               |
-| --------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Browser print CSS           | Useful fallback and QA surface, but inconsistent dialog settings make it insufficient alone.           |
-| HTML-to-canvas/PDF          | Rejected because full-page rasterization harms selection, links, and accessibility.                    |
-| Paged-media polyfill        | Promising, but adds layout/runtime complexity and browser-specific risk.                               |
-| React-PDF                   | Strong structured renderer, but duplicates DOM layout and increases bundle/font complexity.            |
-| PDFKit                      | Viable but relatively heavy for browser use.                                                           |
-| jsPDF                       | Selected for MVP: static-host friendly, selectable vector text, links, and deterministic page control. |
-| Hybrid shared layout engine | Target architecture: shared line measurement and break decisions feeding both DOM and PDF backends.    |
+| Approach              | Decision                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| Browser print CSS     | Selected: the only export path that prints the exact semantic preview with selectable text.   |
+| HTML-to-canvas/PDF    | Rejected because full-page rasterization harms selection, links, and accessibility.           |
+| Paged-media polyfill  | Promising, but adds layout/runtime complexity and browser-specific risk.                      |
+| React-PDF             | Strong structured renderer, but duplicates DOM layout and increases bundle/font complexity.   |
+| PDFKit                | Viable but relatively heavy for browser use.                                                  |
+| Separate PDF renderer | Rejected because duplicated typography and pagination inevitably drift from the on-screen CV. |
+| Shared rendered pages | Implemented: measured DOM pages are both the preview and the browser print-to-PDF source.     |
 
-The first release uses jsPDF with shared model and design tokens. Phase 4 replaces conservative chunking with a true shared pagination engine and adds preview/PDF visual regression.
+The first release now uses measured semantic HTML pages for both preview and PDF output. Named Letter/A4 page rules, exact color printing, and print-only chrome removal keep export and preview on one rendering path.
 
 ## Persistence and privacy
 
@@ -90,7 +91,7 @@ Projects autosave to IndexedDB. CSV parsing, editing, project import/export, and
 ```text
 app/                    application shell, UI, styles, metadata
 src/model/              canonical types and fictional project data
-src/lib/                CSV, persistence, PDF, and shared utilities
+src/lib/                CSV, persistence, pagination, and shared utilities
 public/templates/       fictional starter CSVs
 tests/                  unit and static-render checks
 docs/                   architecture, schema, privacy, testing, deployment
@@ -131,7 +132,7 @@ Every phase ends with validation and a GitHub Pages deployment.
 ## Main risks
 
 - DOM and PDF font metrics can diverge; mitigate with a shared layout engine and embedded fonts.
-- Browser PDF libraries increase bundle size; dynamically import jsPDF only for export.
+- Browser print settings vary by platform; named page sizes and zero-margin page rules provide deterministic document geometry while the export UI tells users to choose Save as PDF.
 - Complex multi-column pagination is difficult; ship conservative single-column rules first and validate each new layout.
 - User-selected colors or sizes can create inaccessible documents; provide warnings without restricting intentional choices.
 - IndexedDB can be cleared by the browser; keep backup export prominent and never imply cloud storage.

@@ -12,7 +12,7 @@ Vitae Studio is a private, local-first web app for turning flexible CSV data int
 - Structured sections and entries with ordering, visibility, custom sections, notes, and bullets
 - Four meaningfully different presets plus color, typography, spacing, margin, paper, and layout controls, with cross-preset pagination regression coverage
 - Letter and A4 paper preview with zoom, page numbers, margin guides, and responsive mode switching
-- Searchable client-generated PDF export
+- Print-to-PDF export from the exact styled preview, with selectable text
 - IndexedDB autosave and versioned `.vitae.json` backup/restore
 - A static, repository-base-path-aware GitHub Pages build
 
@@ -42,7 +42,7 @@ Run every release gate with `npm run validate`.
 
 ## Architecture
 
-The client-side React application converts every CSV import into a versioned, layout-independent `Project` model. The editor, document preview, IndexedDB persistence, JSON backup, and jsPDF renderer all consume that model. Theme and layout tokens stay separate from content so a design can change without data loss.
+The client-side React application converts every CSV import into a versioned, layout-independent `Project` model. The editor, measured document preview, IndexedDB persistence, JSON backup, and print-to-PDF output all consume the same rendered pages. Theme and layout tokens stay separate from content so a design can change without data loss.
 
 See:
 
