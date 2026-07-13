@@ -11,3 +11,4 @@
 - Replaced fixed entry-count page breaks with content-height-aware pagination to prevent large unexplained gaps.
 - Added a first-class profile and contact editor for the document header.
 - Made Print view a real chrome-free preview with explicit print and exit actions.
+- Guaranteed that editor selection highlights never appear in print or exported PDF output.

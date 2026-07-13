@@ -755,6 +755,10 @@ a:focus-visible {
   height: 100vh;
   padding-top: 34px;
 }
+.print-preview .selected-element {
+  outline: none;
+  background: transparent;
+}
 .print-preview .print-preview-actions {
   position: fixed;
   z-index: 50;
@@ -1496,6 +1500,10 @@ a:focus-visible {
   }
   .print-preview-actions {
     display: none !important;
+  }
+  .selected-element {
+    outline: none !important;
+    background: transparent !important;
   }
   .studio-shell,
   .studio-body,
