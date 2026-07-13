@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible problem without including private CV data.
+body:
+  - type: markdown
+    attributes:
+      value: "Please replace personal content with fictional examples before submitting."
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
