@@ -62,7 +62,7 @@ CV data can be sensitive. Vitae Studio parses, stores, edits, and exports docume
 
 ## Known limitations
 
-- Pagination is conservative and entry-based; advanced widow/orphan handling and true shared DOM/PDF measurement are planned.
+- Pagination is content-height aware; advanced widow/orphan handling, splitting within unusually long entries, and true shared DOM/PDF measurement are planned.
 - PDF output currently uses reliable built-in fonts instead of embedding every preview font.
 - Revised CSV imports append safely but do not yet provide field-by-field conflict reconciliation.
 - Rich inline formatting, custom schema construction, standalone theme import/export, image assets, and full keyboard drag-and-drop remain post-MVP.

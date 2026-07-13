@@ -60,30 +60,147 @@ export function moveItem<T>(items: T[], from: number, to: number) {
   return next;
 }
 
-export function paginateSections(sections: CVSection[], entriesPerPage = 6) {
+const PAPER_DIMENSIONS = {
+  letter: { width: 816, height: 1056 },
+  a4: { width: 794, height: 1123 },
+};
+
+function wrappedLines(value: string | undefined, charactersPerLine: number) {
+  if (!value) return 0;
+  return value.split(/\r?\n/).reduce((total, line) => {
+    return total + Math.max(1, Math.ceil(line.length / charactersPerLine));
+  }, 0);
+}
+
+function estimateEntryHeight(entry: CVEntry, project: Project) {
+  const { width } = PAPER_DIMENSIONS[project.layout.paper];
+  const fullWidth = width - project.layout.margin * 2;
+  const contentWidth =
+    project.layout.mode === "date-rail"
+      ? fullWidth - 117
+      : project.layout.mode === "two-column"
+        ? (fullWidth - 28) / 2
+        : fullWidth;
+  const charactersPerLine = Math.max(
+    24,
+    Math.floor(contentWidth / (project.theme.bodySize * 0.52)),
+  );
+  const lineHeight = project.theme.bodySize * project.theme.lineHeight;
+  const titleHeight =
+    wrappedLines(entry.title, charactersPerLine) *
+    (project.theme.bodySize + 0.7) *
+    1.25;
+  const organization = [entry.organization, entry.location]
+    .filter(Boolean)
+    .join(" · ");
+  const organizationHeight =
+    wrappedLines(organization, charactersPerLine) * lineHeight;
+  const summaryHeight =
+    wrappedLines(entry.summary, charactersPerLine) * lineHeight;
+  const bulletHeight = entry.bullets.reduce((total, bullet) => {
+    return (
+      total +
+      wrappedLines(bullet, Math.max(20, charactersPerLine - 4)) * lineHeight +
+      2
+    );
+  }, 0);
+  const stackedDateHeight =
+    project.layout.mode === "date-rail" || !entry.date ? 0 : lineHeight;
+
+  return (
+    7 +
+    titleHeight +
+    organizationHeight +
+    summaryHeight +
+    bulletHeight +
+    stackedDateHeight +
+    (entry.summary ? 6 : 0) +
+    (entry.bullets.length ? 5 : 0)
+  );
+}
+
+function estimateSectionHeadingHeight(section: CVSection, project: Project) {
+  const headingLineHeight = project.theme.headingSize * 1.45;
+  const noteLineHeight = project.theme.bodySize * project.theme.lineHeight;
+  const noteHeight = section.note
+    ? wrappedLines(section.note, 92) * noteLineHeight + 7
+    : 0;
+  return headingLineHeight + 15 + noteHeight;
+}
+
+function estimateHeaderHeight(project: Project) {
+  const { width } = PAPER_DIMENSIONS[project.layout.paper];
+  const fullWidth = width - project.layout.margin * 2;
+  const charactersPerLine = Math.max(
+    30,
+    Math.floor(fullWidth / (project.theme.bodySize * 0.52)),
+  );
+  const lineHeight = project.theme.bodySize * project.theme.lineHeight;
+  const contactText = project.profile.contacts
+    .map((contact) => contact.value)
+    .join(" · ");
+  const contactsHeight = Math.max(
+    12,
+    wrappedLines(contactText, charactersPerLine) * 12,
+  );
+  const summaryHeight = project.profile.summary
+    ? wrappedLines(project.profile.summary, charactersPerLine) * lineHeight + 13
+    : 0;
+  return 29 + 29 + contactsHeight + summaryHeight + 23;
+}
+
+/**
+ * Produces paper-sized fragments using the same typography and spacing tokens
+ * as the preview. The estimate is deliberately slightly conservative, but it
+ * is based on content height rather than an arbitrary entry count.
+ */
+export function paginateProject(project: Project) {
+  const { height } = PAPER_DIMENSIONS[project.layout.paper];
+  const pageCapacity =
+    height -
+    project.layout.margin * 2 -
+    (project.layout.showPageNumbers ? 34 : 12);
   const pages: CVSection[][] = [[]];
-  let used = 0;
-  sections
+  let pageIndex = 0;
+  let used = estimateHeaderHeight(project);
+
+  const beginPage = () => {
+    pages.push([]);
+    pageIndex += 1;
+    used = 0;
+  };
+
+  project.sections
     .filter((section) => !section.hidden)
     .forEach((section) => {
-      const visibleEntries = section.entries.filter((entry) => !entry.hidden);
-      if (!visibleEntries.length) return;
-      let cursor = 0;
-      while (cursor < visibleEntries.length) {
-        const room = Math.max(1, entriesPerPage - used);
-        const slice = visibleEntries.slice(cursor, cursor + room);
-        pages[pages.length - 1].push({ ...section, entries: slice });
-        cursor += slice.length;
-        used += slice.length;
-        if (used >= entriesPerPage && cursor < visibleEntries.length) {
-          pages.push([]);
-          used = 0;
+      const entries = section.entries.filter((entry) => !entry.hidden);
+      if (!entries.length) return;
+
+      const headingHeight = estimateSectionHeadingHeight(section, project);
+      let fragment: CVSection | null = null;
+
+      entries.forEach((entry) => {
+        const entryHeight = estimateEntryHeight(entry, project);
+        const requiredHeight = entryHeight + (fragment ? 0 : headingHeight);
+        const pageHasDocumentContent = pages[pageIndex].length > 0;
+
+        if (used + requiredHeight > pageCapacity && pageHasDocumentContent) {
+          beginPage();
+          fragment = null;
         }
-      }
-      if (used >= entriesPerPage) {
-        pages.push([]);
-        used = 0;
-      }
+
+        if (!fragment) {
+          fragment = { ...section, entries: [] };
+          pages[pageIndex].push(fragment);
+          used += headingHeight;
+        }
+
+        fragment.entries.push(entry);
+        used += entryHeight;
+      });
+
+      used += project.theme.sectionGap;
     });
-  return pages.filter((page) => page.length);
+
+  return pages.filter((page) => page.length > 0);
 }

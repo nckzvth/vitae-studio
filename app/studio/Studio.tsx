@@ -26,6 +26,7 @@ import {
   Trash2,
   Undo2,
   Upload,
+  UserRound,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -36,7 +37,7 @@ import {
   createEntry,
   createSection,
   moveItem,
-  paginateSections,
+  paginateProject,
   parseProjectFile,
   safeFilename,
   toProjectFile,
@@ -55,7 +56,8 @@ import type {
 } from "@/src/model/types";
 
 type StudioMode = "content" | "design" | "export";
-type Selection = { sectionId: string; entryId?: string } | null;
+type Selection =
+  { profile: true } | { sectionId: string; entryId?: string } | null;
 
 const themeNames: Record<ThemeId, { name: string; description: string }> = {
   academic: {
@@ -182,11 +184,16 @@ export function Studio() {
     setProject(next);
   };
 
+  const selectedSectionId =
+    selection && "sectionId" in selection ? selection.sectionId : undefined;
+  const selectedEntryId =
+    selection && "sectionId" in selection ? selection.entryId : undefined;
+  const profileSelected = Boolean(selection && "profile" in selection);
   const selectedSection = project?.sections.find(
-    (section) => section.id === selection?.sectionId,
+    (section) => section.id === selectedSectionId,
   );
   const selectedEntry = selectedSection?.entries.find(
-    (entry) => entry.id === selection?.entryId,
+    (entry) => entry.id === selectedEntryId,
   );
   const visibleSections = useMemo(() => {
     if (!project) return [];
@@ -203,13 +210,7 @@ export function Studio() {
     );
   }, [project, search]);
   const pages = useMemo(
-    () =>
-      project
-        ? paginateSections(
-            project.sections,
-            project.theme.preset === "technical" ? 8 : 6,
-          )
-        : [],
+    () => (project ? paginateProject(project) : []),
     [project],
   );
 
@@ -525,11 +526,24 @@ export function Studio() {
                   placeholder="Find anything"
                 />
               </label>
+              <button
+                className={`profile-structure ${profileSelected ? "selected" : ""}`}
+                onClick={() => setSelection({ profile: true })}
+              >
+                <span className="profile-icon">
+                  <UserRound size={16} />
+                </span>
+                <span>
+                  <strong>Profile &amp; contact</strong>
+                  <small>{project.profile.fullName}</small>
+                </span>
+                <small>Header</small>
+              </button>
               <div className="section-list">
                 {visibleSections.map((section, index) => (
                   <div
                     key={section.id}
-                    className={`section-row ${selection?.sectionId === section.id && !selection.entryId ? "selected" : ""}`}
+                    className={`section-row ${selectedSectionId === section.id && !selectedEntryId ? "selected" : ""}`}
                   >
                     <button
                       className="section-main"
@@ -576,7 +590,7 @@ export function Studio() {
                     {section.entries.map((entry) => (
                       <button
                         key={entry.id}
-                        className={`entry-row ${selection?.entryId === entry.id ? "selected" : ""}`}
+                        className={`entry-row ${selectedEntryId === entry.id ? "selected" : ""}`}
                         onClick={() =>
                           setSelection({
                             sectionId: section.id,
@@ -699,7 +713,9 @@ export function Studio() {
         >
           {mode === "content" && (
             <ContentInspector
+              project={project}
               commit={commit}
+              profileSelected={profileSelected}
               section={selectedSection}
               entry={selectedEntry}
               updateSection={updateSection}
@@ -787,6 +803,11 @@ function PaperPage({
   setSelection: (value: Selection) => void;
 }) {
   const theme = project.theme;
+  const selectedSectionId =
+    selection && "sectionId" in selection ? selection.sectionId : undefined;
+  const selectedEntryId =
+    selection && "sectionId" in selection ? selection.entryId : undefined;
+  const profileSelected = Boolean(selection && "profile" in selection);
   const pageStyle = {
     "--doc-accent": theme.accent,
     "--doc-text": theme.text,
@@ -807,7 +828,15 @@ function PaperPage({
       style={pageStyle}
     >
       {pageNumber === 1 && (
-        <header className="cv-header">
+        <header
+          className={`cv-header ${profileSelected ? "selected-element" : ""}`}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("a")) {
+              event.preventDefault();
+            }
+            setSelection({ profile: true });
+          }}
+        >
           <h1>{project.profile.fullName}</h1>
           <p>{project.profile.professionalTitle}</p>
           <div className="contact-line">
@@ -830,7 +859,7 @@ function PaperPage({
         {sections.map((section) => (
           <section
             key={section.id}
-            className={`cv-section ${selection?.sectionId === section.id && !selection.entryId ? "selected-element" : ""}`}
+            className={`cv-section ${selectedSectionId === section.id && !selectedEntryId ? "selected-element" : ""}`}
             onClick={() => setSelection({ sectionId: section.id })}
           >
             <h2>{section.title}</h2>
@@ -838,7 +867,7 @@ function PaperPage({
             {section.entries.map((entry) => (
               <article
                 key={entry.id}
-                className={`cv-entry ${selection?.entryId === entry.id ? "selected-element" : ""}`}
+                className={`cv-entry ${selectedEntryId === entry.id ? "selected-element" : ""}`}
                 onClick={(event) => {
                   event.stopPropagation();
                   setSelection({ sectionId: section.id, entryId: entry.id });
@@ -876,20 +905,155 @@ function PaperPage({
 }
 
 function ContentInspector({
+  project,
   commit,
+  profileSelected,
   section,
   entry,
   updateSection,
   updateEntry,
   setSelection,
 }: {
+  project: Project;
   commit: (updater: (project: Project) => Project) => void;
+  profileSelected: boolean;
   section?: CVSection;
   entry?: CVEntry;
   updateSection: (updates: Partial<CVSection>) => void;
   updateEntry: (updates: Partial<CVEntry>) => void;
   setSelection: (selection: Selection) => void;
 }) {
+  if (profileSelected) {
+    const updateProfile = (updates: Partial<Project["profile"]>) =>
+      commit((current) => ({
+        ...current,
+        profile: { ...current.profile, ...updates },
+      }));
+    const updateContact = (
+      id: string,
+      updates: Partial<Project["profile"]["contacts"][number]>,
+    ) =>
+      updateProfile({
+        contacts: project.profile.contacts.map((contact) =>
+          contact.id === id ? { ...contact, ...updates } : contact,
+        ),
+      });
+
+    return (
+      <div className="inspector-content">
+        <div className="panel-heading">
+          <div>
+            <span className="eyebrow">Person header</span>
+            <h2>Profile &amp; contact</h2>
+          </div>
+          <UserRound size={19} className="heading-icon" />
+        </div>
+        <Field label="Full name">
+          <input
+            value={project.profile.fullName}
+            onChange={(event) =>
+              updateProfile({ fullName: event.target.value })
+            }
+          />
+        </Field>
+        <Field label="Professional title">
+          <input
+            value={project.profile.professionalTitle}
+            onChange={(event) =>
+              updateProfile({ professionalTitle: event.target.value })
+            }
+          />
+        </Field>
+        <Field label="Profile summary">
+          <textarea
+            rows={4}
+            value={project.profile.summary ?? ""}
+            onChange={(event) => updateProfile({ summary: event.target.value })}
+            placeholder="Optional short positioning statement"
+          />
+        </Field>
+        <div className="inspector-group contact-group">
+          <div className="contact-group-heading">
+            <span className="group-label">Contact details</span>
+            <button
+              onClick={() =>
+                updateProfile({
+                  contacts: [
+                    ...project.profile.contacts,
+                    {
+                      id: crypto.randomUUID(),
+                      label: "Contact",
+                      value: "",
+                    },
+                  ],
+                })
+              }
+            >
+              <Plus size={13} /> Add
+            </button>
+          </div>
+          {project.profile.contacts.length === 0 && (
+            <p className="helper">Add email, location, phone, or web links.</p>
+          )}
+          {project.profile.contacts.map((contact) => (
+            <div className="contact-editor" key={contact.id}>
+              <div className="contact-editor-row">
+                <label>
+                  <span>Label</span>
+                  <input
+                    aria-label={`Label for ${contact.value || "contact"}`}
+                    value={contact.label}
+                    onChange={(event) =>
+                      updateContact(contact.id, { label: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Value</span>
+                  <input
+                    aria-label={`Value for ${contact.label}`}
+                    value={contact.value}
+                    onChange={(event) =>
+                      updateContact(contact.id, { value: event.target.value })
+                    }
+                  />
+                </label>
+                <button
+                  className="icon-button"
+                  aria-label={`Remove ${contact.label}`}
+                  onClick={() =>
+                    updateProfile({
+                      contacts: project.profile.contacts.filter(
+                        (item) => item.id !== contact.id,
+                      ),
+                    })
+                  }
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+              <label className="contact-link-field">
+                <span>Link or mailto (optional)</span>
+                <input
+                  aria-label={`Link for ${contact.label}`}
+                  value={contact.href ?? ""}
+                  placeholder="https://… or mailto:…"
+                  onChange={(event) =>
+                    updateContact(contact.id, {
+                      href: event.target.value || undefined,
+                    })
+                  }
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+        <p className="helper">
+          Header arrangement and alignment follow the selected design preset.
+        </p>
+      </div>
+    );
+  }
   if (!section) {
     return (
       <div className="empty-inspector">

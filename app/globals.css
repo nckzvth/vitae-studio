@@ -504,6 +504,51 @@ a:focus-visible {
   background: transparent;
   font-size: 11px;
 }
+.profile-structure {
+  width: 100%;
+  min-height: 52px;
+  margin: 0 0 13px;
+  padding: 8px 8px;
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  text-align: left;
+}
+.profile-structure:hover,
+.profile-structure.selected {
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+.profile-structure > span:nth-child(2) {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.profile-structure strong {
+  font-size: 10px;
+}
+.profile-structure small {
+  color: var(--muted);
+  font-size: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profile-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: white;
+  color: var(--accent);
+  border: 1px solid var(--line-dark);
+}
 .section-list {
   display: flex;
   flex-direction: column;
@@ -931,6 +976,67 @@ a:focus-visible {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+.heading-icon {
+  color: var(--accent);
+}
+.contact-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.contact-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.contact-group-heading button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9px;
+  font-weight: 700;
+}
+.contact-editor {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7f9f7;
+}
+.contact-editor-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 28px;
+  gap: 6px;
+  align-items: end;
+}
+.contact-editor label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.contact-editor label > span {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.contact-editor input {
+  min-width: 0;
+  width: 100%;
+  height: 31px;
+  border: 1px solid var(--line-dark);
+  border-radius: 5px;
+  background: white;
+  padding: 0 7px;
+  font-size: 9px;
+}
+.contact-link-field {
+  margin-top: 7px;
 }
 .inspector-group {
   margin: 22px 0;

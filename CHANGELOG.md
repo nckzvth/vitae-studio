@@ -8,3 +8,5 @@
 - Added structured content editing, section organization, autosave, and project backup.
 - Added four design presets, fine controls, paper preview, and client-side PDF export.
 - Added tests, documentation, continuous validation, and GitHub Pages deployment.
+- Replaced fixed entry-count page breaks with content-height-aware pagination to prevent large unexplained gaps.
+- Added a first-class profile and contact editor for the document header.

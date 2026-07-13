@@ -65,7 +65,7 @@ Presets are complete token bundles, not accent swaps. Theme tokens cover font st
 
 ## Preview, pagination, and PDF
 
-The MVP preview uses fixed Letter/A4 page surfaces, shared tokens, measured content grouping, page boundaries, zoom, fit controls, and print-safe CSS. Entries are assigned to pages conservatively and headings remain attached to their first entry.
+The MVP preview uses fixed Letter/A4 page surfaces, shared tokens, content-height-aware grouping, page boundaries, zoom, fit controls, and print-safe CSS. Page estimates account for active typography, widths, margins, headings, and wrapped content; headings remain attached to their first entry.
 
 Options considered:
 
