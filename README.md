@@ -63,7 +63,7 @@ CV data can be sensitive. Vitae Studio parses, stores, edits, and exports docume
 
 ## Known limitations
 
-- Pagination is content-height aware; advanced widow/orphan handling, splitting within unusually long entries, and true shared DOM/PDF measurement are planned.
+- Preview pagination uses live browser measurements, protects section headings from becoming orphans, and splits unusually long entries without losing content. The Design panel can opt into conservative section flow or repeated continuation headings.
 - PDF output currently uses reliable built-in fonts instead of embedding every preview font.
 - Revised CSV imports append safely but do not yet provide field-by-field conflict reconciliation.
 - Rich inline formatting, custom schema construction, standalone theme import/export, image assets, and full keyboard drag-and-drop remain post-MVP.

@@ -886,6 +886,9 @@ a:focus-visible {
   margin-bottom: var(--doc-section-gap);
   border-radius: 2px;
 }
+.section-heading {
+  display: flow-root;
+}
 .cv-section h2 {
   margin: 0 0 10px;
   padding-bottom: 4px;
@@ -918,15 +921,35 @@ a:focus-visible {
   grid-row: 2;
 }
 .two-column .cv-sections {
-  columns: 2;
-  column-gap: 28px;
-}
-.two-column .cv-section {
-  break-inside: avoid;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 28px;
 }
 .two-column .cv-entry {
   grid-template-columns: 1fr;
   gap: 1px;
+}
+.cv-column {
+  min-width: 0;
+}
+.entry-continuation {
+  margin-top: 0;
+}
+.bullet-continuation {
+  list-style: none;
+}
+.measurement-paper {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  left: -100000px;
+  height: auto !important;
+  min-height: 0;
+  visibility: hidden;
+  overflow: visible;
+  pointer-events: none;
+  box-shadow: none;
 }
 .entry-date {
   color: var(--doc-muted);

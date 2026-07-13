@@ -30,7 +30,14 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   canonicalFieldLabels,
   canonicalFields,
@@ -47,6 +54,11 @@ import {
   parseProjectFile,
   safeFilename,
   toProjectFile,
+} from "@/src/lib/project";
+import type {
+  PaginatedEntry,
+  PaginatedPage,
+  PaginationMeasurements,
 } from "@/src/lib/project";
 import {
   createBlankProject,
@@ -142,6 +154,9 @@ export function Studio() {
   const [future, setFuture] = useState<Project[]>([]);
   const csvInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
+  const measurementPaper = useRef<HTMLElement>(null);
+  const [paginationMeasurements, setPaginationMeasurements] =
+    useState<PaginationMeasurements | null>(null);
 
   useEffect(() => {
     loadProject()
@@ -225,9 +240,51 @@ export function Studio() {
         ),
     );
   }, [project, search]);
+
+  useLayoutEffect(() => {
+    const root = measurementPaper.current;
+    if (!project || !root) return;
+
+    const measure = () => {
+      const header = root.querySelector<HTMLElement>("[data-measure-header]");
+      const sectionHeadings: Record<string, number> = {};
+      const entries: Record<string, number> = {};
+
+      root
+        .querySelectorAll<HTMLElement>("[data-section-heading]")
+        .forEach((element) => {
+          sectionHeadings[element.dataset.sectionHeading ?? ""] =
+            element.getBoundingClientRect().height;
+        });
+      root
+        .querySelectorAll<HTMLElement>("[data-entry-id]")
+        .forEach((element) => {
+          const margin = Number.parseFloat(
+            getComputedStyle(element).marginBottom,
+          );
+          entries[element.dataset.entryId ?? ""] =
+            element.getBoundingClientRect().height +
+            (Number.isFinite(margin) ? margin : 0);
+        });
+
+      setPaginationMeasurements({
+        revision: project.updatedAt,
+        headerHeight: header?.getBoundingClientRect().height ?? 0,
+        sectionHeadings,
+        entries,
+      });
+    };
+
+    measure();
+    void document.fonts?.ready.then(measure);
+  }, [project]);
+
   const pages = useMemo(
-    () => (project ? paginateProject(project) : []),
-    [project],
+    () =>
+      project
+        ? paginateProject(project, paginationMeasurements ?? undefined)
+        : [],
+    [paginationMeasurements, project],
   );
 
   const startProject = (next: Project) => {
@@ -729,13 +786,26 @@ export function Studio() {
                 <PaperPage
                   key={pageIndex}
                   project={project}
-                  sections={page}
+                  page={page}
                   pageNumber={pageIndex + 1}
                   selection={selection}
                   setSelection={setSelection}
                 />
               ))}
             </div>
+            <PaperPage
+              measurement
+              measureRef={measurementPaper}
+              project={project}
+              page={{
+                columns: [
+                  project.sections.filter((section) => !section.hidden),
+                ],
+              }}
+              pageNumber={1}
+              selection={null}
+              setSelection={() => undefined}
+            />
           </div>
           <div className="print-preview-actions">
             <button
@@ -836,16 +906,20 @@ function Logo({ compact = false }: { compact?: boolean }) {
 
 function PaperPage({
   project,
-  sections,
+  page,
   pageNumber,
   selection,
   setSelection,
+  measurement = false,
+  measureRef,
 }: {
   project: Project;
-  sections: CVSection[];
+  page: PaginatedPage;
   pageNumber: number;
   selection: Selection;
   setSelection: (value: Selection) => void;
+  measurement?: boolean;
+  measureRef?: React.Ref<HTMLElement>;
 }) {
   const theme = project.theme;
   const selectedSectionId =
@@ -869,11 +943,14 @@ function PaperPage({
   } as React.CSSProperties;
   return (
     <article
-      className={`paper ${project.layout.paper} ${project.layout.mode} ${project.layout.showGuides ? "show-guides" : ""}`}
+      ref={measureRef}
+      className={`paper ${measurement ? "measurement-paper" : ""} ${project.layout.paper} ${project.layout.mode} ${project.layout.showGuides && !measurement ? "show-guides" : ""}`}
       style={pageStyle}
+      aria-hidden={measurement || undefined}
     >
       {pageNumber === 1 && (
         <header
+          data-measure-header={measurement || undefined}
           className={`cv-header ${profileSelected ? "selected-element" : ""}`}
           onClick={(event) => {
             if ((event.target as HTMLElement).closest("a")) {
@@ -901,50 +978,101 @@ function PaperPage({
         </header>
       )}
       <div className="cv-sections">
-        {sections.map((section) => (
-          <section
-            key={section.id}
-            className={`cv-section ${selectedSectionId === section.id && !selectedEntryId ? "selected-element" : ""}`}
-            onClick={() => setSelection({ sectionId: section.id })}
-          >
-            <h2>{section.title}</h2>
-            {section.note && <p className="section-note">{section.note}</p>}
-            {section.entries.map((entry) => (
-              <article
-                key={entry.id}
-                className={`cv-entry ${selectedEntryId === entry.id ? "selected-element" : ""}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelection({ sectionId: section.id, entryId: entry.id });
-                }}
+        {page.columns.map((sections, columnIndex) => (
+          <div className="cv-column" key={columnIndex}>
+            {sections.map((section, sectionIndex) => (
+              <section
+                key={`${section.id}-${sectionIndex}`}
+                className={`cv-section ${section.continuation ? "section-continuation" : ""} ${selectedSectionId === section.id && !selectedEntryId ? "selected-element" : ""}`}
+                onClick={() => setSelection({ sectionId: section.id })}
               >
-                <div className="entry-date">{entry.date}</div>
-                <div className="entry-content">
-                  <h3>{entry.title}</h3>
-                  {(entry.organization || entry.location) && (
-                    <p className="entry-org">
-                      {entry.organization}
-                      {entry.organization && entry.location ? " · " : ""}
-                      {entry.location}
-                    </p>
-                  )}
-                  {entry.summary && <p>{entry.summary}</p>}
-                  {!!entry.bullets.length && (
-                    <ul>
-                      {entry.bullets.map((bullet, index) => (
-                        <li key={index}>{bullet}</li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </article>
+                {section.showHeading !== false && (
+                  <div
+                    className="section-heading"
+                    data-section-heading={measurement ? section.id : undefined}
+                  >
+                    <h2>{section.title}</h2>
+                    {section.note && (
+                      <p className="section-note">{section.note}</p>
+                    )}
+                  </div>
+                )}
+                {section.entries.map((entry, entryIndex) => (
+                  <CVEntryView
+                    entry={entry}
+                    entryIndex={entryIndex}
+                    key={`${entry.id}-${entryIndex}`}
+                    measurement={measurement}
+                    sectionId={section.id}
+                    selected={selectedEntryId === entry.id}
+                    setSelection={setSelection}
+                  />
+                ))}
+              </section>
             ))}
-          </section>
+          </div>
         ))}
       </div>
-      {project.layout.showPageNumbers && (
+      {project.layout.showPageNumbers && !measurement && (
         <footer className="page-number">{pageNumber}</footer>
       )}
+    </article>
+  );
+}
+
+function CVEntryView({
+  entry,
+  entryIndex,
+  measurement,
+  sectionId,
+  selected,
+  setSelection,
+}: {
+  entry: PaginatedEntry;
+  entryIndex: number;
+  measurement: boolean;
+  sectionId: string;
+  selected: boolean;
+  setSelection: (value: Selection) => void;
+}) {
+  const showIdentity = entry.showIdentity !== false;
+  return (
+    <article
+      data-entry-id={measurement ? entry.id : undefined}
+      className={`cv-entry ${entry.continuation ? "entry-continuation" : ""} ${selected ? "selected-element" : ""}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        setSelection({ sectionId, entryId: entry.id });
+      }}
+    >
+      <div className="entry-date">{showIdentity ? entry.date : ""}</div>
+      <div className="entry-content">
+        {showIdentity && <h3>{entry.title}</h3>}
+        {showIdentity && (entry.organization || entry.location) && (
+          <p className="entry-org">
+            {entry.organization}
+            {entry.organization && entry.location ? " · " : ""}
+            {entry.location}
+          </p>
+        )}
+        {entry.summary && <p>{entry.summary}</p>}
+        {!!entry.bullets.length && (
+          <ul>
+            {entry.bullets.map((bullet, index) => (
+              <li
+                className={
+                  entry.bulletContinuations?.[index]
+                    ? "bullet-continuation"
+                    : undefined
+                }
+                key={`${entryIndex}-${index}`}
+              >
+                {bullet}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </article>
   );
 }
@@ -1426,6 +1554,51 @@ function DesignInspector({
         suffix="px"
         onChange={(value) => setTheme({ sectionGap: value })}
       />
+      <div className="toggle-row">
+        <span>
+          <strong>Compact page flow</strong>
+          <small>Fill pages; move only orphaned headings</small>
+        </span>
+        <button
+          role="switch"
+          aria-label="Compact page flow"
+          aria-checked={project.layout.compactPageFlow !== false}
+          className={
+            project.layout.compactPageFlow !== false ? "switch on" : "switch"
+          }
+          onClick={() =>
+            setLayout({
+              compactPageFlow: project.layout.compactPageFlow === false,
+            })
+          }
+        >
+          <span />
+        </button>
+      </div>
+      <div className="toggle-row">
+        <span>
+          <strong>Repeat section headings</strong>
+          <small>Show headings again on continuation pages</small>
+        </span>
+        <button
+          role="switch"
+          aria-label="Repeat section headings"
+          aria-checked={project.layout.repeatSectionHeadings === true}
+          className={
+            project.layout.repeatSectionHeadings === true
+              ? "switch on"
+              : "switch"
+          }
+          onClick={() =>
+            setLayout({
+              repeatSectionHeadings:
+                project.layout.repeatSectionHeadings !== true,
+            })
+          }
+        >
+          <span />
+        </button>
+      </div>
       <div className="toggle-row">
         <span>
           <strong>Margin guides</strong>

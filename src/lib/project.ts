@@ -72,7 +72,7 @@ function wrappedLines(value: string | undefined, charactersPerLine: number) {
   }, 0);
 }
 
-function estimateEntryHeight(entry: CVEntry, project: Project) {
+function estimateEntryParts(entry: CVEntry, project: Project) {
   const { width } = PAPER_DIMENSIONS[project.layout.paper];
   const fullWidth = width - project.layout.margin * 2;
   const contentWidth =
@@ -96,26 +96,32 @@ function estimateEntryHeight(entry: CVEntry, project: Project) {
   const organizationHeight =
     wrappedLines(organization, charactersPerLine) * lineHeight;
   const summaryHeight =
-    wrappedLines(entry.summary, charactersPerLine) * lineHeight;
-  const bulletHeight = entry.bullets.reduce((total, bullet) => {
-    return (
-      total +
+    wrappedLines(entry.summary, charactersPerLine) * lineHeight +
+    (entry.summary ? 6 : 0);
+  const bulletHeights = entry.bullets.map(
+    (bullet) =>
       wrappedLines(bullet, Math.max(20, charactersPerLine - 4)) * lineHeight +
-      2
-    );
-  }, 0);
+      2,
+  );
   const stackedDateHeight =
     project.layout.mode === "date-rail" || !entry.date ? 0 : lineHeight;
 
+  return {
+    identity: 7 + titleHeight + organizationHeight + stackedDateHeight,
+    summary: summaryHeight,
+    bullets: bulletHeights,
+    bulletLead: entry.bullets.length ? 5 : 0,
+    lineHeight,
+  };
+}
+
+function estimateEntryHeight(entry: CVEntry, project: Project) {
+  const parts = estimateEntryParts(entry, project);
   return (
-    7 +
-    titleHeight +
-    organizationHeight +
-    summaryHeight +
-    bulletHeight +
-    stackedDateHeight +
-    (entry.summary ? 6 : 0) +
-    (entry.bullets.length ? 5 : 0)
+    parts.identity +
+    parts.summary +
+    parts.bulletLead +
+    parts.bullets.reduce((total, value) => total + value, 0)
   );
 }
 
@@ -165,30 +171,93 @@ function estimateHeaderHeight(project: Project) {
   return 29 + 29 + contactsHeight + summaryHeight + 23;
 }
 
+export interface PaginationMeasurements {
+  revision: string;
+  headerHeight: number;
+  sectionHeadings: Record<string, number>;
+  entries: Record<string, number>;
+}
+
+export interface PaginatedEntry extends CVEntry {
+  continuation?: boolean;
+  showIdentity?: boolean;
+  bulletContinuations?: boolean[];
+}
+
+export interface PaginatedSection extends Omit<CVSection, "entries"> {
+  entries: PaginatedEntry[];
+  continuation?: boolean;
+  showHeading?: boolean;
+}
+
+export interface PaginatedPage {
+  columns: PaginatedSection[][];
+}
+
+function splitAtWord(value: string, fraction: number) {
+  const target = Math.max(
+    1,
+    Math.min(value.length - 1, Math.floor(value.length * fraction)),
+  );
+  const before = value.lastIndexOf(" ", target);
+  const after = value.indexOf(" ", target);
+  const split =
+    before >= Math.min(20, target) ? before : after > 0 ? after : target;
+  return [value.slice(0, split).trim(), value.slice(split).trim()] as const;
+}
+
 /**
  * Produces paper-sized fragments using the same typography and spacing tokens
  * as the preview. The estimate is deliberately slightly conservative, but it
  * is based on content height rather than an arbitrary entry count.
  */
-export function paginateProject(project: Project) {
+export function paginateProject(
+  project: Project,
+  measurements?: PaginationMeasurements,
+): PaginatedPage[] {
   const { height } = PAPER_DIMENSIONS[project.layout.paper];
   const columnCount = project.layout.mode === "two-column" ? 2 : 1;
   const singleColumnCapacity =
     height -
     project.layout.margin * 2 -
-    (project.layout.showPageNumbers ? 34 : 12);
-  const pageCapacity = singleColumnCapacity * columnCount;
-  const pages: CVSection[][] = [[]];
+    (project.layout.showPageNumbers ? 12 : 0);
+  const measured = measurements?.revision === project.updatedAt;
+  const headerHeight = measured
+    ? measurements.headerHeight
+    : estimateHeaderHeight(project);
+  const pages: PaginatedPage[] = [
+    { columns: Array.from({ length: columnCount }, () => []) },
+  ];
   let pageIndex = 0;
-  // The identity header spans every column, so its height consumes the same
-  // vertical space from each column's independent capacity.
-  let used = estimateHeaderHeight(project) * columnCount;
+  let columnIndex = 0;
+  let used = headerHeight;
 
-  const beginPage = () => {
-    pages.push([]);
+  const currentColumn = () => pages[pageIndex].columns[columnIndex];
+  const baseUsage = () => (pageIndex === 0 ? headerHeight : 0);
+
+  const advanceColumn = () => {
+    if (columnIndex + 1 < columnCount) {
+      columnIndex += 1;
+      used = baseUsage();
+      return;
+    }
+    pages.push({
+      columns: Array.from({ length: columnCount }, () => []),
+    });
     pageIndex += 1;
+    columnIndex = 0;
     used = 0;
   };
+
+  const headingHeight = (section: CVSection) =>
+    measured
+      ? (measurements.sectionHeadings[section.id] ??
+        estimateSectionHeadingHeight(section, project))
+      : estimateSectionHeadingHeight(section, project);
+  const entryHeight = (entry: CVEntry) =>
+    measured
+      ? (measurements.entries[entry.id] ?? estimateEntryHeight(entry, project))
+      : estimateEntryHeight(entry, project);
 
   project.sections
     .filter((section) => !section.hidden)
@@ -196,31 +265,220 @@ export function paginateProject(project: Project) {
       const entries = section.entries.filter((entry) => !entry.hidden);
       if (!entries.length) return;
 
-      const headingHeight = estimateSectionHeadingHeight(section, project);
-      let fragment: CVSection | null = null;
+      const sectionHeadingHeight = headingHeight(section);
+      const entryHeights = entries.map(entryHeight);
+      const sectionHeight =
+        sectionHeadingHeight +
+        entryHeights.reduce((total, value) => total + value, 0) +
+        project.theme.sectionGap;
+      const emptyColumnCapacity = singleColumnCapacity - baseUsage();
+      const remaining = singleColumnCapacity - used;
 
-      entries.forEach((entry) => {
-        const entryHeight = estimateEntryHeight(entry, project);
-        const requiredHeight = entryHeight + (fragment ? 0 : headingHeight);
-        const pageHasDocumentContent = pages[pageIndex].length > 0;
+      if (
+        project.layout.compactPageFlow === false &&
+        sectionHeight <= emptyColumnCapacity &&
+        sectionHeight > remaining &&
+        currentColumn().length > 0
+      ) {
+        advanceColumn();
+      }
 
-        if (used + requiredHeight > pageCapacity && pageHasDocumentContent) {
-          beginPage();
-          fragment = null;
+      const firstEntryParts = estimateEntryParts(entries[0], project);
+      const firstEntryEstimate = estimateEntryHeight(entries[0], project);
+      const firstEntryScale =
+        firstEntryEstimate > 0 ? entryHeights[0] / firstEntryEstimate : 1;
+      const firstEntryContent =
+        firstEntryParts.summary || firstEntryParts.bullets[0] || 0;
+      const compactEntryStartHeight =
+        firstEntryParts.identity * firstEntryScale +
+        Math.min(
+          firstEntryContent * firstEntryScale,
+          firstEntryParts.lineHeight * 2,
+        );
+      const firstBlockHeight =
+        sectionHeadingHeight +
+        (project.layout.compactPageFlow === false
+          ? entryHeights[0]
+          : compactEntryStartHeight);
+      if (
+        used + firstBlockHeight > singleColumnCapacity &&
+        currentColumn().length > 0
+      ) {
+        advanceColumn();
+      }
+
+      let fragment: PaginatedSection = {
+        ...section,
+        entries: [],
+        continuation: false,
+        showHeading: true,
+      };
+      currentColumn().push(fragment);
+      used += sectionHeadingHeight;
+
+      entries.forEach((entry, entryIndex) => {
+        const nextEntryHeight = entryHeights[entryIndex];
+        const repeatHeading = project.layout.repeatSectionHeadings === true;
+        const continuationCapacity =
+          singleColumnCapacity - (repeatHeading ? sectionHeadingHeight : 0);
+
+        const continueSection = () => {
+          advanceColumn();
+          const showHeading = repeatHeading;
+          fragment = {
+            ...section,
+            entries: [],
+            continuation: true,
+            showHeading,
+          };
+          currentColumn().push(fragment);
+          if (showHeading) used += sectionHeadingHeight;
+        };
+
+        if (used + nextEntryHeight <= singleColumnCapacity) {
+          fragment.entries.push(entry);
+          used += nextEntryHeight;
+          return;
         }
 
-        if (!fragment) {
-          fragment = { ...section, entries: [] };
-          pages[pageIndex].push(fragment);
-          used += headingHeight;
+        if (
+          project.layout.compactPageFlow === false &&
+          nextEntryHeight <= continuationCapacity
+        ) {
+          continueSection();
+          fragment.entries.push(entry);
+          used += nextEntryHeight;
+          return;
         }
 
-        fragment.entries.push(entry);
-        used += entryHeight;
+        // An entry taller than a fresh column must be split internally. Keep
+        // its identity together, then flow summaries and bullets forward.
+        const estimatedParts = estimateEntryParts(entry, project);
+        const estimatedTotal = estimateEntryHeight(entry, project);
+        const scale = estimatedTotal > 0 ? nextEntryHeight / estimatedTotal : 1;
+        const identityHeight = estimatedParts.identity * scale;
+        const summaryHeight = estimatedParts.summary * scale;
+        const bulletHeights = estimatedParts.bullets.map(
+          (value) => value * scale,
+        );
+        const bulletLead = estimatedParts.bulletLead * scale;
+        const minimumContentHeight = Math.min(
+          summaryHeight || bulletHeights[0] || 0,
+          estimatedParts.lineHeight * 2,
+        );
+
+        if (
+          used + identityHeight + minimumContentHeight > singleColumnCapacity &&
+          fragment.entries.length > 0
+        ) {
+          continueSection();
+        }
+
+        let entryFragment: PaginatedEntry = {
+          ...entry,
+          summary: undefined,
+          bullets: [],
+          bulletContinuations: [],
+          continuation: false,
+          showIdentity: true,
+        };
+        fragment.entries.push(entryFragment);
+        used += identityHeight;
+
+        const continueEntry = () => {
+          continueSection();
+          entryFragment = {
+            ...entry,
+            summary: undefined,
+            bullets: [],
+            bulletContinuations: [],
+            continuation: true,
+            showIdentity: false,
+          };
+          fragment.entries.push(entryFragment);
+        };
+
+        const placeText = (
+          text: string,
+          height: number,
+          kind: "summary" | "bullet",
+          bulletContinuation = false,
+        ) => {
+          let remainingText = text;
+          let remainingHeight = height;
+          let continuesBullet = bulletContinuation;
+
+          while (remainingText) {
+            let available = singleColumnCapacity - used - 6;
+            if (available < estimatedParts.lineHeight * 1.5) {
+              continueEntry();
+              available = singleColumnCapacity - used - 6;
+            }
+
+            if (remainingHeight <= available) {
+              if (kind === "summary") entryFragment.summary = remainingText;
+              else {
+                entryFragment.bullets.push(remainingText);
+                entryFragment.bulletContinuations?.push(continuesBullet);
+              }
+              used += remainingHeight;
+              return;
+            }
+
+            const fraction = Math.max(
+              0.08,
+              Math.min(0.82, (available / remainingHeight) * 0.82),
+            );
+            const [piece, rest] = splitAtWord(remainingText, fraction);
+            if (!piece || !rest) {
+              if (kind === "summary") entryFragment.summary = remainingText;
+              else {
+                entryFragment.bullets.push(remainingText);
+                entryFragment.bulletContinuations?.push(continuesBullet);
+              }
+              used += Math.min(remainingHeight, available);
+              return;
+            }
+            const pieceFraction = piece.length / remainingText.length;
+            const pieceHeight = Math.min(
+              available,
+              Math.max(
+                estimatedParts.lineHeight,
+                remainingHeight * pieceFraction + estimatedParts.lineHeight,
+              ),
+            );
+            if (kind === "summary") entryFragment.summary = piece;
+            else {
+              entryFragment.bullets.push(piece);
+              entryFragment.bulletContinuations?.push(continuesBullet);
+            }
+            used += pieceHeight;
+            remainingText = rest;
+            remainingHeight = Math.max(
+              estimatedParts.lineHeight,
+              remainingHeight - pieceHeight,
+            );
+            continuesBullet = kind === "bullet";
+            continueEntry();
+          }
+        };
+
+        if (entry.summary) {
+          placeText(entry.summary, summaryHeight, "summary");
+        }
+        entry.bullets.forEach((bullet, bulletIndex) => {
+          placeText(
+            bullet,
+            bulletHeights[bulletIndex] + (bulletIndex === 0 ? bulletLead : 0),
+            "bullet",
+          );
+        });
       });
 
       used += project.theme.sectionGap;
     });
 
-  return pages.filter((page) => page.length > 0);
+  return pages.filter((page) =>
+    page.columns.some((column) => column.length > 0),
+  );
 }

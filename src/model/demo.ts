@@ -222,6 +222,8 @@ export function createDemoProject(): Project {
       margin: 44,
       showGuides: false,
       showPageNumbers: true,
+      compactPageFlow: true,
+      repeatSectionHeadings: false,
     },
     imports: [],
     createdAt: now,

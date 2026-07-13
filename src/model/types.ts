@@ -54,6 +54,8 @@ export interface LayoutSettings {
   margin: number;
   showGuides: boolean;
   showPageNumbers: boolean;
+  compactPageFlow?: boolean;
+  repeatSectionHeadings?: boolean;
 }
 
 export interface ImportSource {

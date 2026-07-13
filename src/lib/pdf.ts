@@ -32,6 +32,20 @@ export async function downloadPdf(project: Project) {
   const [mutedR, mutedG, mutedB] = hexToRgb(project.theme.muted);
   let y = margin;
   let page = 1;
+  const contentBottom =
+    height - margin - (project.layout.showPageNumbers ? 10 : 0);
+
+  const setBody = (bold = false) => {
+    pdf.setFont("helvetica", bold ? "bold" : "normal");
+    pdf.setFontSize(project.theme.bodySize + (bold ? 0.5 : 0));
+    pdf.setTextColor(textR, textG, textB);
+  };
+
+  const setMuted = (italic = false) => {
+    pdf.setFont("helvetica", italic ? "italic" : "normal");
+    pdf.setFontSize(project.theme.bodySize);
+    pdf.setTextColor(mutedR, mutedG, mutedB);
+  };
 
   const footer = () => {
     if (!project.layout.showPageNumbers) return;
@@ -42,11 +56,29 @@ export async function downloadPdf(project: Project) {
   };
 
   const ensure = (needed: number) => {
-    if (y + needed < height - margin) return;
+    if (y + needed <= contentBottom) return;
     footer();
     pdf.addPage();
     page += 1;
     y = margin;
+  };
+
+  const writeLines = (
+    lines: string[],
+    options: {
+      x: number;
+      lineHeight: number;
+      style: () => void;
+      onFirstLine?: () => void;
+    },
+  ) => {
+    lines.forEach((line, index) => {
+      ensure(options.lineHeight + 2);
+      if (index === 0) options.onFirstLine?.();
+      options.style();
+      pdf.text(line, options.x, y);
+      y += options.lineHeight;
+    });
   };
 
   pdf.setProperties({
@@ -57,8 +89,19 @@ export async function downloadPdf(project: Project) {
   pdf.setTextColor(textR, textG, textB);
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(24);
-  pdf.text(project.profile.fullName, margin, y + 20);
-  y += 30;
+  const nameLines = pdf.splitTextToSize(
+    project.profile.fullName,
+    maxWidth,
+  ) as string[];
+  nameLines.forEach((line) => {
+    ensure(28);
+    pdf.setTextColor(textR, textG, textB);
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(24);
+    pdf.text(line, margin, y + 20);
+    y += 28;
+  });
+  y += 2;
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(10);
   pdf.setTextColor(mutedR, mutedG, mutedB);
@@ -68,67 +111,115 @@ export async function downloadPdf(project: Project) {
     .map((contact) => contact.value)
     .join("  ·  ");
   const contactLines = pdf.splitTextToSize(contactLine, maxWidth) as string[];
-  pdf.text(contactLines, margin, y);
-  y += contactLines.length * 12 + 14;
+  if (contactLines.length) {
+    writeLines(contactLines, {
+      x: margin,
+      lineHeight: 12,
+      style: () => setMuted(),
+    });
+  }
+  y += 10;
+  if (project.profile.summary) {
+    const summaryLines = pdf.splitTextToSize(
+      project.profile.summary,
+      maxWidth,
+    ) as string[];
+    writeLines(summaryLines, {
+      x: margin,
+      lineHeight: 12,
+      style: () => setBody(),
+    });
+    y += 10;
+  }
 
   const renderSection = (section: CVSection) => {
-    ensure(42);
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(project.theme.headingSize);
-    pdf.setTextColor(accentR, accentG, accentB);
-    pdf.text(section.title.toUpperCase(), margin, y);
-    y += 5;
+    const entries = section.entries.filter((entry) => !entry.hidden);
+    if (!entries.length) return;
+    const headingLines = pdf.splitTextToSize(
+      section.title.toUpperCase(),
+      maxWidth,
+    ) as string[];
+    const noteLines = section.note
+      ? (pdf.splitTextToSize(section.note, maxWidth) as string[])
+      : [];
+    // Keep the section heading with the beginning of its first entry.
+    ensure(headingLines.length * 15 + noteLines.length * 11 + 34);
+    writeLines(headingLines, {
+      x: margin,
+      lineHeight: 15,
+      style: () => {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(project.theme.headingSize);
+        pdf.setTextColor(accentR, accentG, accentB);
+      },
+    });
     if (project.theme.ruleWidth > 0) {
       pdf.setDrawColor(accentR, accentG, accentB);
       pdf.setLineWidth(project.theme.ruleWidth);
       pdf.line(margin, y, width - margin, y);
     }
-    y += 15;
-    section.entries
-      .filter((entry) => !entry.hidden)
-      .forEach((entry) => {
-        ensure(58);
-        pdf.setTextColor(textR, textG, textB);
-        pdf.setFont("helvetica", "bold");
-        pdf.setFontSize(project.theme.bodySize + 0.5);
-        const title = pdf.splitTextToSize(
-          entry.title,
-          maxWidth - 110,
-        ) as string[];
-        pdf.text(title, margin, y);
-        if (entry.date) {
-          pdf.setFont("helvetica", "normal");
-          pdf.setTextColor(mutedR, mutedG, mutedB);
-          pdf.text(entry.date, width - margin, y, { align: "right" });
-        }
-        y += title.length * 13;
-        if (entry.organization) {
-          pdf.setFont("helvetica", "italic");
-          pdf.setTextColor(mutedR, mutedG, mutedB);
-          const org = `${entry.organization}${entry.location ? ` · ${entry.location}` : ""}`;
-          pdf.text(pdf.splitTextToSize(org, maxWidth), margin, y);
-          y += 13;
-        }
-        if (entry.summary) {
-          pdf.setFont("helvetica", "normal");
-          pdf.setTextColor(textR, textG, textB);
-          const lines = pdf.splitTextToSize(
-            entry.summary,
-            maxWidth,
-          ) as string[];
-          ensure(lines.length * 12 + 10);
-          pdf.text(lines, margin, y);
-          y += lines.length * 12 + 3;
-        }
-        entry.bullets.forEach((bullet) => {
-          const lines = pdf.splitTextToSize(bullet, maxWidth - 18) as string[];
-          ensure(lines.length * 12 + 4);
-          pdf.circle(margin + 3, y - 3, 1.3, "F");
-          pdf.text(lines, margin + 14, y);
-          y += lines.length * 12 + 2;
-        });
-        y += 9;
+    y += 8;
+    if (noteLines.length) {
+      writeLines(noteLines, {
+        x: margin,
+        lineHeight: 11,
+        style: () => setMuted(true),
       });
+      y += 5;
+    }
+    entries.forEach((entry) => {
+      ensure(34);
+      setBody(true);
+      const title = pdf.splitTextToSize(
+        entry.title,
+        maxWidth - 110,
+      ) as string[];
+      writeLines(title, {
+        x: margin,
+        lineHeight: 13,
+        style: () => setBody(true),
+        onFirstLine: () => {
+          if (!entry.date) return;
+          setMuted();
+          pdf.text(entry.date, width - margin, y, { align: "right" });
+        },
+      });
+      if (entry.organization || entry.location) {
+        const org = `${entry.organization ?? ""}${entry.organization && entry.location ? ` · ` : ""}${entry.location ?? ""}`;
+        const organizationLines = pdf.splitTextToSize(
+          org,
+          maxWidth,
+        ) as string[];
+        writeLines(organizationLines, {
+          x: margin,
+          lineHeight: 12,
+          style: () => setMuted(true),
+        });
+      }
+      if (entry.summary) {
+        const lines = pdf.splitTextToSize(entry.summary, maxWidth) as string[];
+        writeLines(lines, {
+          x: margin,
+          lineHeight: 12,
+          style: () => setBody(),
+        });
+        y += 3;
+      }
+      entry.bullets.forEach((bullet) => {
+        const lines = pdf.splitTextToSize(bullet, maxWidth - 18) as string[];
+        writeLines(lines, {
+          x: margin + 14,
+          lineHeight: 12,
+          style: () => setBody(),
+          onFirstLine: () => {
+            setBody();
+            pdf.circle(margin + 3, y - 3, 1.3, "F");
+          },
+        });
+        y += 2;
+      });
+      y += 9;
+    });
     y += project.theme.sectionGap / 2;
   };
 

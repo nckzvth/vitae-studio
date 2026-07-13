@@ -14,3 +14,4 @@
 - Guaranteed that editor selection highlights never appear in print or exported PDF output.
 - Added downloadable universal CSV templates and profile/section-note import support.
 - Corrected two-column pagination capacity and added regression coverage for every preset.
+- Replaced estimate-only page breaks with measured compact flow, orphan-heading protection, explicit conservative/repeated-heading toggles, deterministic two-column columns, and lossless long-entry continuation in preview and PDF output.
