@@ -2,7 +2,7 @@
 
 import {
   ArrowDown,
-  ArrowUp,
+  Bold,
   Check,
   CircleAlert,
   Download,
@@ -13,23 +13,29 @@ import {
   FileSpreadsheet,
   FolderOpen,
   GripVertical,
+  Italic,
   LayoutTemplate,
+  List,
   Minus,
   Palette,
   PanelLeftClose,
   Plus,
   Redo2,
+  RemoveFormatting,
   RotateCcw,
   Search,
   Settings2,
   Sparkles,
+  Strikethrough,
   Trash2,
   Undo2,
+  Underline,
   Upload,
   UserRound,
   X,
 } from "lucide-react";
 import {
+  createElement,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -46,8 +52,15 @@ import {
 import { downloadRenderedPdf } from "@/src/lib/pdf";
 import { deleteProject, loadProject, saveProject } from "@/src/lib/persistence";
 import {
+  normalizeRichText,
+  plainToRichText,
+  richTextForDisplay,
+  richTextToPlain,
+} from "@/src/lib/rich-text";
+import {
   createEntry,
   createSection,
+  moveEntry,
   moveItem,
   paginateProject,
   parseProjectFile,
@@ -66,15 +79,101 @@ import {
 } from "@/src/model/demo";
 import type {
   CsvImportDraft,
+  BulletStyle,
   CVEntry,
   CVSection,
   Project,
+  RichTextSpan,
+  RichTextValue,
   ThemeId,
 } from "@/src/model/types";
 
 type StudioMode = "content" | "design" | "export";
 type Selection =
   { profile: true } | { sectionId: string; entryId?: string } | null;
+
+type RichTextTarget =
+  | {
+      kind: "profile";
+      field: "fullName" | "professionalTitle" | "summary";
+    }
+  | { kind: "contact"; contactId: string }
+  | { kind: "section"; sectionId: string; field: "title" | "note" }
+  | {
+      kind: "entry";
+      sectionId: string;
+      entryId: string;
+      field: "title" | "organization" | "location" | "date" | "summary";
+    };
+
+type DragItem =
+  | { kind: "section"; sectionId: string }
+  | { kind: "entry"; sectionId: string; entryId: string };
+
+function applyRichText(
+  project: Project,
+  target: RichTextTarget,
+  plain: string,
+  formatted: RichTextValue,
+) {
+  if (target.kind === "contact") {
+    return {
+      ...project,
+      profile: {
+        ...project.profile,
+        contacts: project.profile.contacts.map((contact) =>
+          contact.id === target.contactId
+            ? { ...contact, value: plain, formatting: formatted }
+            : contact,
+        ),
+      },
+    };
+  }
+  if (target.kind === "profile") {
+    return {
+      ...project,
+      profile: {
+        ...project.profile,
+        [target.field]: plain,
+        formatting: {
+          ...project.profile.formatting,
+          [target.field]: formatted,
+        },
+      },
+    };
+  }
+  return {
+    ...project,
+    sections: project.sections.map((section) => {
+      if (section.id !== target.sectionId) return section;
+      if (target.kind === "section") {
+        return {
+          ...section,
+          [target.field]: plain,
+          formatting: {
+            ...section.formatting,
+            [target.field]: formatted,
+          },
+        };
+      }
+      return {
+        ...section,
+        entries: section.entries.map((entry) =>
+          entry.id === target.entryId
+            ? {
+                ...entry,
+                [target.field]: plain,
+                formatting: {
+                  ...entry.formatting,
+                  [target.field]: formatted,
+                },
+              }
+            : entry,
+        ),
+      };
+    }),
+  };
+}
 
 const themeNames: Record<ThemeId, { name: string; description: string }> = {
   academic: {
@@ -151,6 +250,10 @@ export function Studio() {
   );
   const [history, setHistory] = useState<Project[]>([]);
   const [future, setFuture] = useState<Project[]>([]);
+  const [editingLabel, setEditingLabel] = useState<string | null>(null);
+  const [dragItem, setDragItem] = useState<DragItem | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const directHistoryKey = useRef<string | null>(null);
   const csvInput = useRef<HTMLInputElement>(null);
   const projectInput = useRef<HTMLInputElement>(null);
   const measurementPaper = useRef<HTMLElement>(null);
@@ -186,17 +289,34 @@ export function Studio() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const commit = useCallback(
-    (updater: (current: Project) => Project) => {
-      if (!project) return;
-      setHistory((items) => [...items.slice(-39), project]);
+  const commit = useCallback((updater: (current: Project) => Project) => {
+    setProject((current) => {
+      if (!current) return current;
+      setHistory((items) => [...items.slice(-39), current]);
       setFuture([]);
-      setProject({
-        ...updater(project),
+      return {
+        ...updater(current),
         updatedAt: new Date().toISOString(),
+      };
+    });
+  }, []);
+
+  const commitDirect = useCallback(
+    (fieldKey: string, updater: (current: Project) => Project) => {
+      setProject((current) => {
+        if (!current) return current;
+        if (directHistoryKey.current !== fieldKey) {
+          setHistory((items) => [...items.slice(-39), current]);
+          setFuture([]);
+          directHistoryKey.current = fieldKey;
+        }
+        return {
+          ...updater(current),
+          updatedAt: new Date().toISOString(),
+        };
       });
     },
-    [project],
+    [],
   );
 
   const undo = () => {
@@ -345,6 +465,46 @@ export function Studio() {
     }));
   };
 
+  const updateRichText = (
+    target: RichTextTarget,
+    plain: string,
+    formatted: RichTextValue,
+  ) =>
+    commitDirect(JSON.stringify(target), (current) =>
+      applyRichText(current, target, plain, formatted),
+    );
+
+  const updateBullets = (
+    sectionId: string,
+    entryId: string,
+    bullets: string[],
+    formatting: RichTextValue[],
+  ) =>
+    commitDirect(`bullets:${sectionId}:${entryId}`, (current) => ({
+      ...current,
+      sections: current.sections.map((section) =>
+        section.id === sectionId
+          ? {
+              ...section,
+              entries: section.entries.map((entry) =>
+                entry.id === entryId
+                  ? {
+                      ...entry,
+                      bullets,
+                      formatting: { ...entry.formatting, bullets: formatting },
+                    }
+                  : entry,
+              ),
+            }
+          : section,
+      ),
+    }));
+
+  const handleEditingChange = (label: string | null) => {
+    if (!label) directHistoryKey.current = null;
+    setEditingLabel(label);
+  };
+
   const applyImport = () => {
     if (!importDraft) return;
     const base = project ?? createBlankProject();
@@ -396,6 +556,13 @@ export function Studio() {
       document.documentElement.classList.remove("exporting-pdf");
       setIsExporting(false);
     }
+  };
+
+  const formatSelection = (command: string) => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active?.isContentEditable) return;
+    document.execCommand(command, false);
+    active.dispatchEvent(new InputEvent("input", { bubbles: true }));
   };
 
   if (!ready)
@@ -637,71 +804,179 @@ export function Studio() {
                 <small>Header</small>
               </button>
               <div className="section-list">
-                {visibleSections.map((section, index) => (
+                {visibleSections.map((section) => (
                   <div
                     key={section.id}
-                    className={`section-row ${selectedSectionId === section.id && !selectedEntryId ? "selected" : ""}`}
+                    className={`section-row ${selectedSectionId === section.id && !selectedEntryId ? "selected" : ""} ${dropTarget === `section-${section.id}` ? "drop-target" : ""}`}
+                    draggable
+                    onDragStart={(event) => {
+                      setDragItem({ kind: "section", sectionId: section.id });
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", section.id);
+                    }}
+                    onDragEnd={() => {
+                      setDragItem(null);
+                      setDropTarget(null);
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (dragItem?.kind === "section") {
+                        setDropTarget(`section-${section.id}`);
+                      }
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      if (dragItem?.kind !== "section") return;
+                      commit((current) => {
+                        const from = current.sections.findIndex(
+                          (item) => item.id === dragItem.sectionId,
+                        );
+                        const to = current.sections.findIndex(
+                          (item) => item.id === section.id,
+                        );
+                        return {
+                          ...current,
+                          sections: moveItem(current.sections, from, to),
+                        };
+                      });
+                      setDragItem(null);
+                      setDropTarget(null);
+                    }}
                   >
                     <button
                       className="section-main"
                       onClick={() => setSelection({ sectionId: section.id })}
+                      aria-label={`${section.title}. Drag to reorder section.`}
+                      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                      onKeyDown={(event) => {
+                        if (
+                          !event.altKey ||
+                          !["ArrowUp", "ArrowDown"].includes(event.key)
+                        ) {
+                          return;
+                        }
+                        event.preventDefault();
+                        commit((current) => {
+                          const index = current.sections.findIndex(
+                            (item) => item.id === section.id,
+                          );
+                          const target =
+                            index + (event.key === "ArrowUp" ? -1 : 1);
+                          return {
+                            ...current,
+                            sections: moveItem(current.sections, index, target),
+                          };
+                        });
+                      }}
                     >
                       <GripVertical size={14} className="grip" />
                       <span>{section.title}</span>
                       <small>{section.entries.length}</small>
                     </button>
-                    <div className="row-tools">
-                      <button
-                        aria-label={`Move ${section.title} up`}
-                        disabled={index === 0}
-                        onClick={() =>
-                          commit((current) => ({
-                            ...current,
-                            sections: moveItem(
-                              current.sections,
-                              index,
-                              index - 1,
-                            ),
-                          }))
-                        }
-                      >
-                        <ArrowUp size={13} />
-                      </button>
-                      <button
-                        aria-label={`Move ${section.title} down`}
-                        disabled={index === project.sections.length - 1}
-                        onClick={() =>
-                          commit((current) => ({
-                            ...current,
-                            sections: moveItem(
-                              current.sections,
-                              index,
-                              index + 1,
-                            ),
-                          }))
-                        }
-                      >
-                        <ArrowDown size={13} />
-                      </button>
-                    </div>
                     {section.entries.map((entry) => (
                       <button
                         key={entry.id}
-                        className={`entry-row ${selectedEntryId === entry.id ? "selected" : ""}`}
+                        className={`entry-row ${selectedEntryId === entry.id ? "selected" : ""} ${dropTarget === `entry-${entry.id}` ? "drop-target" : ""}`}
+                        draggable
                         onClick={() =>
                           setSelection({
                             sectionId: section.id,
                             entryId: entry.id,
                           })
                         }
+                        onDragStart={(event) => {
+                          event.stopPropagation();
+                          setDragItem({
+                            kind: "entry",
+                            sectionId: section.id,
+                            entryId: entry.id,
+                          });
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData("text/plain", entry.id);
+                        }}
+                        onDragEnd={() => {
+                          setDragItem(null);
+                          setDropTarget(null);
+                        }}
+                        onDragOver={(event) => {
+                          if (dragItem?.kind !== "entry") return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setDropTarget(`entry-${entry.id}`);
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          if (dragItem?.kind !== "entry") return;
+                          commit((current) => ({
+                            ...current,
+                            sections: moveEntry(
+                              current.sections,
+                              dragItem.sectionId,
+                              dragItem.entryId,
+                              section.id,
+                              entry.id,
+                            ),
+                          }));
+                          setDragItem(null);
+                          setDropTarget(null);
+                        }}
+                        aria-label={`${entry.title}. Drag to reorder entry.`}
+                        aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                        onKeyDown={(event) => {
+                          if (
+                            !event.altKey ||
+                            !["ArrowUp", "ArrowDown"].includes(event.key)
+                          ) {
+                            return;
+                          }
+                          event.preventDefault();
+                          commit((current) => ({
+                            ...current,
+                            sections: current.sections.map((item) => {
+                              if (item.id !== section.id) return item;
+                              const index = item.entries.findIndex(
+                                (candidate) => candidate.id === entry.id,
+                              );
+                              const target =
+                                index + (event.key === "ArrowUp" ? -1 : 1);
+                              return {
+                                ...item,
+                                entries: moveItem(item.entries, index, target),
+                              };
+                            }),
+                          }));
+                        }}
                       >
-                        <span className="entry-line" />
+                        <GripVertical size={12} className="grip" />
                         <span>{entry.title}</span>
                         {entry.hidden && <EyeOff size={12} />}
                       </button>
                     ))}
                     <button
-                      className="add-entry"
+                      className={`add-entry ${dropTarget === `entry-end-${section.id}` ? "drop-target" : ""}`}
+                      onDragOver={(event) => {
+                        if (dragItem?.kind !== "entry") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setDropTarget(`entry-end-${section.id}`);
+                      }}
+                      onDrop={(event) => {
+                        if (dragItem?.kind !== "entry") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        commit((current) => ({
+                          ...current,
+                          sections: moveEntry(
+                            current.sections,
+                            dragItem.sectionId,
+                            dragItem.entryId,
+                            section.id,
+                          ),
+                        }));
+                        setDragItem(null);
+                        setDropTarget(null);
+                      }}
                       onClick={() => {
                         const entry = createEntry();
                         commit((current) => ({
@@ -784,6 +1059,65 @@ export function Studio() {
                 Clean view
               </button>
             </div>
+            {mode === "content" && (
+              <div className="format-toolbar" aria-label="Text formatting">
+                <span className="format-status">
+                  {editingLabel
+                    ? `Editing ${editingLabel}`
+                    : "Click text to edit"}
+                </span>
+                {[
+                  ["bold", "Bold", Bold],
+                  ["italic", "Italic", Italic],
+                  ["underline", "Underline", Underline],
+                  ["strikeThrough", "Strikethrough", Strikethrough],
+                  ["removeFormat", "Clear formatting", RemoveFormatting],
+                ].map(([command, label, Icon]) => (
+                  <button
+                    key={String(command)}
+                    type="button"
+                    disabled={!editingLabel}
+                    aria-label={String(label)}
+                    title={String(label)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => formatSelection(String(command))}
+                  >
+                    <Icon size={14} />
+                  </button>
+                ))}
+                {selectedEntry && (
+                  <>
+                    <span className="format-divider" />
+                    <List size={14} aria-hidden="true" />
+                    {(
+                      [
+                        ["disc", "•"],
+                        ["circle", "◦"],
+                        ["square", "▪"],
+                        ["dash", "—"],
+                        ["none", "None"],
+                      ] as [BulletStyle, string][]
+                    ).map(([style, symbol]) => (
+                      <button
+                        key={style}
+                        type="button"
+                        className={
+                          (selectedEntry.bulletStyle ?? "disc") === style
+                            ? "active"
+                            : ""
+                        }
+                        aria-label={`${style} list style`}
+                        title={`${style} list style`}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => updateEntry({ bulletStyle: style })}
+                      >
+                        {symbol}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
             <div className="zoom-controls">
               <button
                 aria-label="Zoom out"
@@ -818,6 +1152,10 @@ export function Studio() {
                   pageNumber={pageIndex + 1}
                   selection={selection}
                   setSelection={setSelection}
+                  editable={mode === "content" && !printPreview}
+                  onRichTextChange={updateRichText}
+                  onBulletsChange={updateBullets}
+                  onEditingChange={handleEditingChange}
                 />
               ))}
             </div>
@@ -833,6 +1171,10 @@ export function Studio() {
               pageNumber={1}
               selection={null}
               setSelection={() => undefined}
+              editable={false}
+              onRichTextChange={() => undefined}
+              onBulletsChange={() => undefined}
+              onEditingChange={() => undefined}
             />
           </div>
           <div className="print-preview-actions">
@@ -934,6 +1276,355 @@ function Logo({ compact = false }: { compact?: boolean }) {
   );
 }
 
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function richTextToHtml(value: RichTextValue) {
+  return value.spans
+    .map((span) => {
+      let html = escapeHtml(span.text).replaceAll("\n", "<br>");
+      if (span.bold) html = `<strong>${html}</strong>`;
+      if (span.italic) html = `<em>${html}</em>`;
+      if (span.underline) html = `<u>${html}</u>`;
+      if (span.strikethrough) html = `<s>${html}</s>`;
+      return html;
+    })
+    .join("");
+}
+
+function richTextFromElement(element: HTMLElement) {
+  const spans: RichTextSpan[] = [];
+  const append = (text: string, marks: Omit<RichTextSpan, "text">) => {
+    if (!text) return;
+    spans.push({ text, ...marks });
+  };
+  const visit = (node: Node, marks: Omit<RichTextSpan, "text">) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      append(node.textContent ?? "", marks);
+      return;
+    }
+    if (!(node instanceof HTMLElement)) return;
+    if (node.tagName === "BR") {
+      append("\n", marks);
+      return;
+    }
+    const tag = node.tagName.toLowerCase();
+    const style = node.style;
+    const nextMarks = {
+      ...marks,
+      ...(["b", "strong"].includes(tag) ||
+      style.fontWeight === "bold" ||
+      Number.parseInt(style.fontWeight, 10) >= 600
+        ? { bold: true }
+        : {}),
+      ...(["i", "em"].includes(tag) || style.fontStyle === "italic"
+        ? { italic: true }
+        : {}),
+      ...(tag === "u" || style.textDecoration.includes("underline")
+        ? { underline: true }
+        : {}),
+      ...(["s", "strike"].includes(tag) ||
+      style.textDecoration.includes("line-through")
+        ? { strikethrough: true }
+        : {}),
+    };
+    if (
+      ["div", "p"].includes(tag) &&
+      spans.length > 0 &&
+      !spans.at(-1)?.text.endsWith("\n")
+    ) {
+      append("\n", marks);
+    }
+    node.childNodes.forEach((child) => visit(child, nextMarks));
+  };
+  element.childNodes.forEach((node) => visit(node, {}));
+  const normalized = normalizeRichText({ spans });
+  return /^\n*$/.test(richTextToPlain(normalized))
+    ? plainToRichText("")
+    : normalized;
+}
+
+function RichTextDisplay({ value }: { value: RichTextValue }) {
+  return value.spans.map((span, index) => {
+    let content: React.ReactNode = span.text.split("\n").map((part, line) => (
+      <span key={line}>
+        {line}
+        {line < span.text.split("\n").length - 1 && <br />}
+      </span>
+    ));
+    if (span.bold) content = <strong>{content}</strong>;
+    if (span.italic) content = <em>{content}</em>;
+    if (span.underline) content = <u>{content}</u>;
+    if (span.strikethrough) content = <s>{content}</s>;
+    return <span key={index}>{content}</span>;
+  });
+}
+
+function DirectText({
+  as,
+  value,
+  formatted,
+  editable,
+  label,
+  placeholder,
+  wrapperClassName = "",
+  onChange,
+  onEditingChange,
+}: {
+  as: "div" | "h1" | "h2" | "h3" | "p" | "span";
+  value: string;
+  formatted?: RichTextValue;
+  editable: boolean;
+  label: string;
+  placeholder?: string;
+  wrapperClassName?: string;
+  onChange: (plain: string, formatted: RichTextValue) => void;
+  onEditingChange: (label: string | null) => void;
+}) {
+  const editorRef = useRef<HTMLElement>(null);
+  const snapshot = useRef<RichTextValue>(plainToRichText(value));
+  const lastEmitted = useRef("");
+  const [active, setActive] = useState(false);
+  const displayValue = richTextForDisplay(formatted, value);
+  const serialized = JSON.stringify(displayValue);
+
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || serialized === lastEmitted.current) return;
+    editor.innerHTML = richTextToHtml(displayValue) || "<br>";
+    lastEmitted.current = serialized;
+  }, [displayValue, serialized]);
+
+  if (!editable) {
+    return createElement(
+      as,
+      wrapperClassName ? { className: wrapperClassName } : undefined,
+      <RichTextDisplay value={displayValue} />,
+    );
+  }
+
+  const Shell = as === "span" ? "span" : "div";
+  return (
+    <Shell className={`inline-editor-shell ${wrapperClassName}`.trim()}>
+      {createElement(as, {
+        ref: editorRef,
+        className: "direct-text-editor",
+        contentEditable: true,
+        suppressContentEditableWarning: true,
+        spellCheck: true,
+        role: "textbox",
+        "aria-label": `Edit ${label} directly in the document`,
+        "data-placeholder": placeholder,
+        "data-empty": value.length === 0 || undefined,
+        onFocus: () => {
+          snapshot.current = richTextFromElement(editorRef.current!);
+          setActive(true);
+          onEditingChange(label);
+        },
+        onBlur: () => {
+          setActive(false);
+          onEditingChange(null);
+        },
+        onInput: (event: React.FormEvent<HTMLElement>) => {
+          const next = richTextFromElement(event.currentTarget);
+          lastEmitted.current = JSON.stringify(next);
+          onChange(richTextToPlain(next), next);
+        },
+        onPaste: (event: React.ClipboardEvent<HTMLElement>) => {
+          event.preventDefault();
+          const pastedHtml = event.clipboardData.getData("text/html");
+          if (pastedHtml) {
+            const temporary = document.createElement("div");
+            temporary.innerHTML = pastedHtml;
+            document.execCommand(
+              "insertHTML",
+              false,
+              richTextToHtml(richTextFromElement(temporary)),
+            );
+          } else {
+            document.execCommand(
+              "insertText",
+              false,
+              event.clipboardData.getData("text/plain"),
+            );
+          }
+        },
+        onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+          if (event.key === "Escape") event.currentTarget.blur();
+        },
+      })}
+      {active && (
+        <button
+          type="button"
+          className="field-revert"
+          aria-label={`Undo changes to ${label}`}
+          title={`Undo changes to ${label}`}
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            const next = snapshot.current;
+            if (editorRef.current) {
+              editorRef.current.innerHTML = richTextToHtml(next) || "<br>";
+            }
+            lastEmitted.current = JSON.stringify(next);
+            onChange(richTextToPlain(next), next);
+          }}
+        >
+          <RotateCcw size={11} />
+        </button>
+      )}
+    </Shell>
+  );
+}
+
+function BulletListEditor({
+  bullets,
+  formatting,
+  continuations,
+  style,
+  editable,
+  label,
+  onChange,
+  onEditingChange,
+}: {
+  bullets: string[];
+  formatting: RichTextValue[];
+  continuations?: boolean[];
+  style: BulletStyle;
+  editable: boolean;
+  label: string;
+  onChange: (bullets: string[], formatting: RichTextValue[]) => void;
+  onEditingChange: (label: string | null) => void;
+}) {
+  const listRef = useRef<HTMLUListElement>(null);
+  const snapshot = useRef(formatting);
+  const lastEmitted = useRef("");
+  const [active, setActive] = useState(false);
+  const serialized = JSON.stringify(formatting);
+
+  const fillList = useCallback(
+    (values: RichTextValue[]) => {
+      const list = listRef.current;
+      if (!list) return;
+      list.replaceChildren();
+      (values.length ? values : [plainToRichText("")]).forEach(
+        (formattedBullet, index) => {
+          const item = document.createElement("li");
+          if (continuations?.[index]) item.className = "bullet-continuation";
+          item.innerHTML = richTextToHtml(formattedBullet) || "<br>";
+          list.append(item);
+        },
+      );
+    },
+    [continuations],
+  );
+
+  useLayoutEffect(() => {
+    if (serialized === lastEmitted.current) return;
+    fillList(formatting);
+    lastEmitted.current = serialized;
+  }, [fillList, formatting, serialized]);
+
+  if (!editable) {
+    return (
+      <ul className={`bullet-style-${style}`}>
+        {bullets.map((bullet, index) => (
+          <li
+            className={
+              continuations?.[index] ? "bullet-continuation" : undefined
+            }
+            key={index}
+          >
+            <RichTextDisplay
+              value={formatting[index] ?? plainToRichText(bullet)}
+            />
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  const readList = (list: HTMLUListElement) => {
+    const values = Array.from(
+      list.querySelectorAll<HTMLLIElement>(":scope > li"),
+    )
+      .map((item) => richTextFromElement(item))
+      .filter((item) => richTextToPlain(item).trim().length > 0);
+    return {
+      values,
+      bullets: values.map(richTextToPlain),
+    };
+  };
+
+  return (
+    <div className="bullet-editor-shell">
+      <ul
+        ref={listRef}
+        className={`direct-bullet-editor bullet-style-${style}`}
+        contentEditable
+        suppressContentEditableWarning
+        spellCheck
+        role="textbox"
+        aria-label="Edit bullet list directly in the document"
+        data-empty={bullets.length === 0 || undefined}
+        onFocus={() => {
+          snapshot.current = readList(listRef.current!).values;
+          setActive(true);
+          onEditingChange(label);
+        }}
+        onBlur={() => {
+          setActive(false);
+          onEditingChange(null);
+        }}
+        onInput={(event) => {
+          const next = readList(event.currentTarget);
+          lastEmitted.current = JSON.stringify(next.values);
+          onChange(next.bullets, next.values);
+        }}
+        onPaste={(event) => {
+          event.preventDefault();
+          document.execCommand(
+            "insertText",
+            false,
+            event.clipboardData.getData("text/plain"),
+          );
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.currentTarget.blur();
+        }}
+      />
+      {active && (
+        <button
+          type="button"
+          className="field-revert"
+          aria-label="Undo changes to bullet list"
+          title="Undo changes to bullet list"
+          onMouseDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            fillList(snapshot.current);
+            lastEmitted.current = JSON.stringify(snapshot.current);
+            onChange(snapshot.current.map(richTextToPlain), snapshot.current);
+          }}
+        >
+          <RotateCcw size={11} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 function PaperPage({
   project,
   page,
@@ -942,6 +1633,10 @@ function PaperPage({
   setSelection,
   measurement = false,
   measureRef,
+  editable,
+  onRichTextChange,
+  onBulletsChange,
+  onEditingChange,
 }: {
   project: Project;
   page: PaginatedPage;
@@ -950,6 +1645,19 @@ function PaperPage({
   setSelection: (value: Selection) => void;
   measurement?: boolean;
   measureRef?: React.Ref<HTMLElement>;
+  editable: boolean;
+  onRichTextChange: (
+    target: RichTextTarget,
+    plain: string,
+    formatted: RichTextValue,
+  ) => void;
+  onBulletsChange: (
+    sectionId: string,
+    entryId: string,
+    bullets: string[],
+    formatting: RichTextValue[],
+  ) => void;
+  onEditingChange: (label: string | null) => void;
 }) {
   const theme = project.theme;
   const selectedSectionId =
@@ -989,21 +1697,101 @@ function PaperPage({
             setSelection({ profile: true });
           }}
         >
-          <h1>{project.profile.fullName}</h1>
-          <p>{project.profile.professionalTitle}</p>
+          <DirectText
+            as="h1"
+            value={project.profile.fullName}
+            formatted={project.profile.formatting?.fullName}
+            editable={editable}
+            label="name"
+            placeholder="Your name"
+            onEditingChange={onEditingChange}
+            onChange={(plain, formatted) =>
+              onRichTextChange(
+                { kind: "profile", field: "fullName" },
+                plain,
+                formatted,
+              )
+            }
+          />
+          <DirectText
+            as="p"
+            value={project.profile.professionalTitle}
+            formatted={project.profile.formatting?.professionalTitle}
+            editable={editable}
+            label="professional title"
+            placeholder="Professional title"
+            onEditingChange={onEditingChange}
+            onChange={(plain, formatted) =>
+              onRichTextChange(
+                { kind: "profile", field: "professionalTitle" },
+                plain,
+                formatted,
+              )
+            }
+          />
           <div className="contact-line">
-            {project.profile.contacts.map((contact) =>
-              contact.href ? (
-                <a key={contact.id} href={contact.href}>
-                  {contact.value}
-                </a>
-              ) : (
-                <span key={contact.id}>{contact.value}</span>
-              ),
-            )}
+            {project.profile.contacts
+              .filter(
+                (contact) => contact.value || (editable && profileSelected),
+              )
+              .map((contact) =>
+                contact.href ? (
+                  <a key={contact.id} href={contact.href}>
+                    <DirectText
+                      as="span"
+                      value={contact.value}
+                      formatted={contact.formatting}
+                      editable={editable}
+                      label={contact.label.toLowerCase()}
+                      placeholder={contact.label}
+                      onEditingChange={onEditingChange}
+                      onChange={(plain, formatted) =>
+                        onRichTextChange(
+                          { kind: "contact", contactId: contact.id },
+                          plain,
+                          formatted,
+                        )
+                      }
+                    />
+                  </a>
+                ) : (
+                  <DirectText
+                    key={contact.id}
+                    as="span"
+                    value={contact.value}
+                    formatted={contact.formatting}
+                    editable={editable}
+                    label={contact.label.toLowerCase()}
+                    placeholder={contact.label}
+                    onEditingChange={onEditingChange}
+                    onChange={(plain, formatted) =>
+                      onRichTextChange(
+                        { kind: "contact", contactId: contact.id },
+                        plain,
+                        formatted,
+                      )
+                    }
+                  />
+                ),
+              )}
           </div>
-          {project.profile.summary && (
-            <div className="profile-summary">{project.profile.summary}</div>
+          {(project.profile.summary || (editable && profileSelected)) && (
+            <DirectText
+              as="div"
+              wrapperClassName="profile-summary"
+              value={project.profile.summary ?? ""}
+              formatted={project.profile.formatting?.summary}
+              editable={editable}
+              label="profile summary"
+              onEditingChange={onEditingChange}
+              onChange={(plain, formatted) =>
+                onRichTextChange(
+                  { kind: "profile", field: "summary" },
+                  plain,
+                  formatted,
+                )
+              }
+            />
           )}
         </header>
       )}
@@ -1021,9 +1809,50 @@ function PaperPage({
                     className="section-heading"
                     data-section-heading={measurement ? section.id : undefined}
                   >
-                    <h2>{section.title}</h2>
-                    {section.note && (
-                      <p className="section-note">{section.note}</p>
+                    <DirectText
+                      as="h2"
+                      value={section.title}
+                      formatted={section.formatting?.title}
+                      editable={editable}
+                      label={`${section.title} heading`}
+                      placeholder="Section heading"
+                      onEditingChange={onEditingChange}
+                      onChange={(plain, formatted) =>
+                        onRichTextChange(
+                          {
+                            kind: "section",
+                            sectionId: section.id,
+                            field: "title",
+                          },
+                          plain,
+                          formatted,
+                        )
+                      }
+                    />
+                    {(section.note ||
+                      (editable &&
+                        selectedSectionId === section.id &&
+                        !selectedEntryId)) && (
+                      <DirectText
+                        as="p"
+                        wrapperClassName="section-note"
+                        value={section.note ?? ""}
+                        formatted={section.formatting?.note}
+                        editable={editable}
+                        label={`${section.title} note`}
+                        onEditingChange={onEditingChange}
+                        onChange={(plain, formatted) =>
+                          onRichTextChange(
+                            {
+                              kind: "section",
+                              sectionId: section.id,
+                              field: "note",
+                            },
+                            plain,
+                            formatted,
+                          )
+                        }
+                      />
                     )}
                   </div>
                 )}
@@ -1036,6 +1865,10 @@ function PaperPage({
                     sectionId={section.id}
                     selected={selectedEntryId === entry.id}
                     setSelection={setSelection}
+                    editable={editable}
+                    onRichTextChange={onRichTextChange}
+                    onBulletsChange={onBulletsChange}
+                    onEditingChange={onEditingChange}
                   />
                 ))}
               </section>
@@ -1057,6 +1890,10 @@ function CVEntryView({
   sectionId,
   selected,
   setSelection,
+  editable,
+  onRichTextChange,
+  onBulletsChange,
+  onEditingChange,
 }: {
   entry: PaginatedEntry;
   entryIndex: number;
@@ -1064,8 +1901,30 @@ function CVEntryView({
   sectionId: string;
   selected: boolean;
   setSelection: (value: Selection) => void;
+  editable: boolean;
+  onRichTextChange: (
+    target: RichTextTarget,
+    plain: string,
+    formatted: RichTextValue,
+  ) => void;
+  onBulletsChange: (
+    sectionId: string,
+    entryId: string,
+    bullets: string[],
+    formatting: RichTextValue[],
+  ) => void;
+  onEditingChange: (label: string | null) => void;
 }) {
   const showIdentity = entry.showIdentity !== false;
+  const canEdit = editable && !entry.fragmented;
+  const entryTarget = (
+    field: "title" | "organization" | "location" | "date" | "summary",
+  ): RichTextTarget => ({
+    kind: "entry",
+    sectionId,
+    entryId: entry.id,
+    field,
+  });
   return (
     <article
       data-entry-id={measurement ? entry.id : undefined}
@@ -1075,32 +1934,112 @@ function CVEntryView({
         setSelection({ sectionId, entryId: entry.id });
       }}
     >
-      <div className="entry-date">{showIdentity ? entry.date : ""}</div>
-      <div className="entry-content">
-        {showIdentity && <h3>{entry.title}</h3>}
-        {showIdentity && (entry.organization || entry.location) && (
-          <p className="entry-org">
-            {entry.organization}
-            {entry.organization && entry.location ? " · " : ""}
-            {entry.location}
-          </p>
+      <div className="entry-date">
+        {showIdentity && (entry.date || (selected && canEdit)) && (
+          <DirectText
+            as="div"
+            value={entry.date ?? ""}
+            formatted={entry.formatting?.date}
+            editable={canEdit}
+            label="date"
+            placeholder="Date"
+            onEditingChange={onEditingChange}
+            onChange={(plain, formatted) =>
+              onRichTextChange(entryTarget("date"), plain, formatted)
+            }
+          />
         )}
-        {entry.summary && <p>{entry.summary}</p>}
-        {!!entry.bullets.length && (
-          <ul>
-            {entry.bullets.map((bullet, index) => (
-              <li
-                className={
-                  entry.bulletContinuations?.[index]
-                    ? "bullet-continuation"
-                    : undefined
-                }
-                key={`${entryIndex}-${index}`}
-              >
-                {bullet}
-              </li>
-            ))}
-          </ul>
+      </div>
+      <div className="entry-content">
+        {showIdentity && (
+          <DirectText
+            as="h3"
+            value={entry.title}
+            formatted={entry.formatting?.title}
+            editable={canEdit}
+            label="title or role"
+            placeholder="Title or role"
+            onEditingChange={onEditingChange}
+            onChange={(plain, formatted) =>
+              onRichTextChange(entryTarget("title"), plain, formatted)
+            }
+          />
+        )}
+        {showIdentity &&
+          (entry.organization || entry.location || (selected && canEdit)) && (
+            <div className="entry-org">
+              {(Boolean(entry.organization) || (selected && canEdit)) && (
+                <DirectText
+                  as="span"
+                  value={entry.organization ?? ""}
+                  formatted={entry.formatting?.organization}
+                  editable={canEdit}
+                  label="organization"
+                  placeholder="Organization"
+                  onEditingChange={onEditingChange}
+                  onChange={(plain, formatted) =>
+                    onRichTextChange(
+                      entryTarget("organization"),
+                      plain,
+                      formatted,
+                    )
+                  }
+                />
+              )}
+              {entry.organization && entry.location ? " · " : ""}
+              {(Boolean(entry.location) || (selected && canEdit)) && (
+                <DirectText
+                  as="span"
+                  value={entry.location ?? ""}
+                  formatted={entry.formatting?.location}
+                  editable={canEdit}
+                  label="location"
+                  placeholder="Location"
+                  onEditingChange={onEditingChange}
+                  onChange={(plain, formatted) =>
+                    onRichTextChange(entryTarget("location"), plain, formatted)
+                  }
+                />
+              )}
+            </div>
+          )}
+        {(entry.summary || (selected && canEdit)) && (
+          <DirectText
+            as="p"
+            value={entry.summary ?? ""}
+            formatted={richTextForDisplay(
+              entry.formatting?.summary,
+              entry.summary,
+            )}
+            editable={canEdit}
+            label="summary"
+            onEditingChange={onEditingChange}
+            onChange={(plain, formatted) =>
+              onRichTextChange(entryTarget("summary"), plain, formatted)
+            }
+          />
+        )}
+        {(entry.bullets.length > 0 || (selected && canEdit)) && (
+          <BulletListEditor
+            key={`${entry.id}-${entryIndex}`}
+            bullets={entry.bullets}
+            formatting={entry.bullets.map((bullet, index) =>
+              richTextForDisplay(
+                entry.formatting?.bullets?.[
+                  entry.bulletSourceIndexes?.[index] ?? index
+                ],
+                bullet,
+              ),
+            )}
+            continuations={entry.bulletContinuations}
+            style={entry.bulletStyle ?? "disc"}
+            editable={canEdit}
+            label="bullet list"
+            onEditingChange={onEditingChange}
+            onChange={(bullets, formatting) =>
+              onBulletsChange(sectionId, entry.id, bullets, formatting)
+            }
+          />
         )}
       </div>
     </article>
@@ -1151,30 +2090,13 @@ function ContentInspector({
           </div>
           <UserRound size={19} className="heading-icon" />
         </div>
-        <Field label="Full name">
-          <input
-            value={project.profile.fullName}
-            onChange={(event) =>
-              updateProfile({ fullName: event.target.value })
-            }
-          />
-        </Field>
-        <Field label="Professional title">
-          <input
-            value={project.profile.professionalTitle}
-            onChange={(event) =>
-              updateProfile({ professionalTitle: event.target.value })
-            }
-          />
-        </Field>
-        <Field label="Profile summary">
-          <textarea
-            rows={4}
-            value={project.profile.summary ?? ""}
-            onChange={(event) => updateProfile({ summary: event.target.value })}
-            placeholder="Optional short positioning statement"
-          />
-        </Field>
+        <div className="direct-edit-callout">
+          <strong>Edit on the page</strong>
+          <p>
+            Click your name, title, summary, or contact text in the CV. Select
+            any words to format them, just like a document editor.
+          </p>
+        </div>
         <div className="inspector-group contact-group">
           <div className="contact-group-heading">
             <span className="group-label">Contact details</span>
@@ -1211,16 +2133,6 @@ function ContentInspector({
                     }
                   />
                 </label>
-                <label>
-                  <span>Value</span>
-                  <input
-                    aria-label={`Value for ${contact.label}`}
-                    value={contact.value}
-                    onChange={(event) =>
-                      updateContact(contact.id, { value: event.target.value })
-                    }
-                  />
-                </label>
                 <button
                   className="icon-button"
                   aria-label={`Remove ${contact.label}`}
@@ -1252,7 +2164,9 @@ function ContentInspector({
           ))}
         </div>
         <p className="helper">
-          Header arrangement and alignment follow the selected design preset.
+          Contact labels and links stay here; edit the visible text directly on
+          the page. The small rollback button restores the active field in one
+          click.
         </p>
       </div>
     );
@@ -1282,25 +2196,18 @@ function ContentInspector({
             {section.hidden ? <EyeOff size={17} /> : <Eye size={17} />}
           </button>
         </div>
-        <Field label="Heading">
-          <input
-            value={section.title}
-            onChange={(event) => updateSection({ title: event.target.value })}
-          />
-        </Field>
-        <Field label="Section note">
-          <textarea
-            rows={3}
-            value={section.note ?? ""}
-            onChange={(event) => updateSection({ note: event.target.value })}
-            placeholder="Optional legend or note"
-          />
-        </Field>
+        <div className="direct-edit-callout">
+          <strong>Edit on the page</strong>
+          <p>
+            Click the section heading or its optional note in the CV and type
+            where the text appears.
+          </p>
+        </div>
         <div className="inspector-group">
           <span className="group-label">Entries</span>
           <p className="helper">
-            {section.entries.length} entries in this section. Use the arrows in
-            Structure to change section order.
+            {section.entries.length} entries in this section. Drag sections and
+            entries by their grip handles to reorder them.
           </p>
         </div>
         <button
@@ -1335,51 +2242,27 @@ function ContentInspector({
           {entry.hidden ? <EyeOff size={17} /> : <Eye size={17} />}
         </button>
       </div>
-      <Field label="Title or role">
-        <input
-          value={entry.title}
-          onChange={(event) => updateEntry({ title: event.target.value })}
-        />
-      </Field>
-      <Field label="Organization">
-        <input
-          value={entry.organization ?? ""}
-          onChange={(event) =>
-            updateEntry({ organization: event.target.value })
-          }
-        />
-      </Field>
-      <div className="field-grid">
-        <Field label="Date">
-          <input
-            value={entry.date ?? ""}
-            onChange={(event) => updateEntry({ date: event.target.value })}
-          />
-        </Field>
-        <Field label="Location">
-          <input
-            value={entry.location ?? ""}
-            onChange={(event) => updateEntry({ location: event.target.value })}
-          />
-        </Field>
+      <div className="direct-edit-callout">
+        <strong>Edit on the page</strong>
+        <p>
+          Click any visible field in this entry. Press Enter for a new line or a
+          new bullet, and select text before using bold, italic, underline, or
+          clear-format controls above the page.
+        </p>
       </div>
-      <Field label="Summary">
-        <textarea
-          rows={4}
-          value={entry.summary ?? ""}
-          onChange={(event) => updateEntry({ summary: event.target.value })}
-        />
-      </Field>
-      <Field label="Bullets" hint="One per line">
-        <textarea
-          rows={6}
-          value={entry.bullets.join("\n")}
+      <Field label="Bullet marker">
+        <select
+          value={entry.bulletStyle ?? "disc"}
           onChange={(event) =>
-            updateEntry({
-              bullets: event.target.value.split("\n").filter(Boolean),
-            })
+            updateEntry({ bulletStyle: event.target.value as BulletStyle })
           }
-        />
+        >
+          <option value="disc">Filled circle</option>
+          <option value="circle">Open circle</option>
+          <option value="square">Square</option>
+          <option value="dash">Dash</option>
+          <option value="none">No marker</option>
+        </select>
       </Field>
       <button
         className="danger-text"

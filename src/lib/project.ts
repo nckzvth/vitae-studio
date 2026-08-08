@@ -53,11 +53,47 @@ export function parseProjectFile(text: string): Project {
 }
 
 export function moveItem<T>(items: T[], from: number, to: number) {
-  if (to < 0 || to >= items.length) return items;
+  if (from < 0 || from >= items.length || to < 0 || to >= items.length) {
+    return items;
+  }
   const next = [...items];
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
   return next;
+}
+
+export function moveEntry(
+  sections: CVSection[],
+  sourceSectionId: string,
+  entryId: string,
+  targetSectionId: string,
+  targetEntryId?: string,
+) {
+  if (entryId === targetEntryId) return sections;
+  const sourceSection = sections.find(
+    (section) => section.id === sourceSectionId,
+  );
+  const entry = sourceSection?.entries.find((item) => item.id === entryId);
+  if (!entry || !sections.some((section) => section.id === targetSectionId)) {
+    return sections;
+  }
+  const withoutEntry = sections.map((section) => ({
+    ...section,
+    entries: section.entries.filter((item) => item.id !== entryId),
+  }));
+  return withoutEntry.map((section) => {
+    if (section.id !== targetSectionId) return section;
+    const targetIndex = targetEntryId
+      ? section.entries.findIndex((item) => item.id === targetEntryId)
+      : section.entries.length;
+    const nextEntries = [...section.entries];
+    nextEntries.splice(
+      targetIndex < 0 ? nextEntries.length : targetIndex,
+      0,
+      entry,
+    );
+    return { ...section, entries: nextEntries };
+  });
 }
 
 const PAPER_DIMENSIONS = {
@@ -182,6 +218,8 @@ export interface PaginatedEntry extends CVEntry {
   continuation?: boolean;
   showIdentity?: boolean;
   bulletContinuations?: boolean[];
+  bulletSourceIndexes?: number[];
+  fragmented?: boolean;
 }
 
 export interface PaginatedSection extends Omit<CVSection, "entries"> {
@@ -379,8 +417,10 @@ export function paginateProject(
           summary: undefined,
           bullets: [],
           bulletContinuations: [],
+          bulletSourceIndexes: [],
           continuation: false,
           showIdentity: true,
+          fragmented: true,
         };
         fragment.entries.push(entryFragment);
         used += identityHeight;
@@ -392,8 +432,10 @@ export function paginateProject(
             summary: undefined,
             bullets: [],
             bulletContinuations: [],
+            bulletSourceIndexes: [],
             continuation: true,
             showIdentity: false,
+            fragmented: true,
           };
           fragment.entries.push(entryFragment);
         };
@@ -403,6 +445,7 @@ export function paginateProject(
           height: number,
           kind: "summary" | "bullet",
           bulletContinuation = false,
+          bulletSourceIndex?: number,
         ) => {
           let remainingText = text;
           let remainingHeight = height;
@@ -420,6 +463,9 @@ export function paginateProject(
               else {
                 entryFragment.bullets.push(remainingText);
                 entryFragment.bulletContinuations?.push(continuesBullet);
+                entryFragment.bulletSourceIndexes?.push(
+                  bulletSourceIndex ?? entryFragment.bullets.length - 1,
+                );
               }
               used += remainingHeight;
               return;
@@ -435,6 +481,9 @@ export function paginateProject(
               else {
                 entryFragment.bullets.push(remainingText);
                 entryFragment.bulletContinuations?.push(continuesBullet);
+                entryFragment.bulletSourceIndexes?.push(
+                  bulletSourceIndex ?? entryFragment.bullets.length - 1,
+                );
               }
               used += Math.min(remainingHeight, available);
               return;
@@ -451,6 +500,9 @@ export function paginateProject(
             else {
               entryFragment.bullets.push(piece);
               entryFragment.bulletContinuations?.push(continuesBullet);
+              entryFragment.bulletSourceIndexes?.push(
+                bulletSourceIndex ?? entryFragment.bullets.length - 1,
+              );
             }
             used += pieceHeight;
             remainingText = rest;
@@ -471,6 +523,8 @@ export function paginateProject(
             bullet,
             bulletHeights[bulletIndex] + (bulletIndex === 0 ? bulletLead : 0),
             "bullet",
+            false,
+            bulletIndex,
           );
         });
       });

@@ -5,7 +5,22 @@ export interface ContactItem {
   label: string;
   value: string;
   href?: string;
+  formatting?: RichTextValue;
 }
+
+export interface RichTextSpan {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+}
+
+export interface RichTextValue {
+  spans: RichTextSpan[];
+}
+
+export type BulletStyle = "disc" | "circle" | "square" | "dash" | "none";
 
 export interface CVEntry {
   id: string;
@@ -15,6 +30,15 @@ export interface CVEntry {
   date?: string;
   summary?: string;
   bullets: string[];
+  bulletStyle?: BulletStyle;
+  formatting?: {
+    title?: RichTextValue;
+    organization?: RichTextValue;
+    location?: RichTextValue;
+    date?: RichTextValue;
+    summary?: RichTextValue;
+    bullets?: RichTextValue[];
+  };
   hidden?: boolean;
   metadata?: Record<string, FieldValue>;
   sourceFingerprint?: string;
@@ -26,6 +50,10 @@ export interface CVSection {
   kind: string;
   hidden?: boolean;
   note?: string;
+  formatting?: {
+    title?: RichTextValue;
+    note?: RichTextValue;
+  };
   entries: CVEntry[];
 }
 
@@ -74,6 +102,11 @@ export interface Project {
     fullName: string;
     professionalTitle: string;
     summary?: string;
+    formatting?: {
+      fullName?: RichTextValue;
+      professionalTitle?: RichTextValue;
+      summary?: RichTextValue;
+    };
     contacts: ContactItem[];
   };
   sections: CVSection[];

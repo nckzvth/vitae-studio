@@ -40,5 +40,14 @@ describe("direct PDF export", () => {
     expect(cssSource).toContain(".exporting-pdf .paper-stack");
     expect(cssSource).toContain(".exporting-pdf .selected-element");
     expect(cssSource).toContain(".exporting-pdf .paper.show-guides::after");
+    expect(cssSource).toContain(".exporting-pdf .field-revert");
+    expect(cssSource).toContain("word-spacing: 0");
+  });
+
+  it("supports direct rich-text editing and drag reordering", () => {
+    expect(studioSource).toContain("contentEditable: true");
+    expect(studioSource).toContain("Edit bullet list directly in the document");
+    expect(studioSource).toContain("draggable");
+    expect(studioSource).toContain("Undo changes to bullet list");
   });
 });

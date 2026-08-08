@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { moveItem, paginateProject, safeFilename } from "@/src/lib/project";
+import {
+  moveEntry,
+  moveItem,
+  paginateProject,
+  safeFilename,
+} from "@/src/lib/project";
+import {
+  richTextForDisplay,
+  richTextToPlain,
+  sliceRichText,
+} from "@/src/lib/rich-text";
 import { createDemoProject } from "@/src/model/demo";
 import { themePresets } from "@/src/model/demo";
 import type { LayoutMode, ThemeId } from "@/src/model/types";
@@ -24,6 +34,36 @@ describe("project utilities", () => {
     const source = ["a", "b", "c"];
     expect(moveItem(source, 2, 0)).toEqual(["c", "a", "b"]);
     expect(source).toEqual(["a", "b", "c"]);
+  });
+
+  it("moves entries within and across sections without losing content", () => {
+    const source = createDemoProject().sections.slice(0, 2);
+    const moving = source[0].entries[0];
+    const target = source[1].entries[0];
+    const reordered = moveEntry(
+      source,
+      source[0].id,
+      moving.id,
+      source[1].id,
+      target.id,
+    );
+    expect(reordered[0].entries).not.toContainEqual(moving);
+    expect(reordered[1].entries[0]).toEqual(moving);
+    expect(source[0].entries[0]).toEqual(moving);
+  });
+
+  it("preserves inline marks when formatted text is sliced for pagination", () => {
+    const formatted = {
+      spans: [
+        { text: "Lee, ", bold: true },
+        { text: "Morgan", italic: true },
+        { text: " and Patel" },
+      ],
+    };
+    expect(richTextToPlain(sliceRichText(formatted, 5, 11))).toBe("Morgan");
+    expect(richTextForDisplay(formatted, "Morgan").spans).toEqual([
+      { text: "Morgan", italic: true },
+    ]);
   });
 
   it("uses available paper height instead of forcing the demo onto two pages", () => {
