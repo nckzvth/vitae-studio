@@ -14,6 +14,10 @@ const pdfSource = readFileSync(
   new URL("../src/lib/pdf.ts", import.meta.url),
   "utf8",
 );
+const projectSource = readFileSync(
+  new URL("../src/lib/project.ts", import.meta.url),
+  "utf8",
+);
 
 describe("direct PDF export", () => {
   it("downloads the rendered CV pages without invoking browser printing", () => {
@@ -40,5 +44,21 @@ describe("direct PDF export", () => {
     expect(cssSource).toContain(".exporting-pdf .paper-stack");
     expect(cssSource).toContain(".exporting-pdf .selected-element");
     expect(cssSource).toContain(".exporting-pdf .paper.show-guides::after");
+    expect(cssSource).toContain(".exporting-pdf .field-revert");
+    expect(cssSource).toContain("word-spacing: 0");
+  });
+
+  it("supports direct rich-text editing and drag reordering", () => {
+    expect(studioSource).toContain("contentEditable: editable || undefined");
+    expect(studioSource).toContain("Edit bullet list directly in the document");
+    expect(studioSource).toContain("draggable");
+    expect(studioSource).toContain("Undo changes to bullet list");
+  });
+
+  it("uses identical rich-text markup for measurement and exported pages", () => {
+    expect(studioSource).not.toContain("function RichTextDisplay");
+    expect(studioSource).toContain("contentEditable: editable || undefined");
+    expect(studioSource).toContain("contentEditable={editable || undefined}");
+    expect(projectSource).toContain("PAGE_FLOW_SAFETY_PX");
   });
 });
