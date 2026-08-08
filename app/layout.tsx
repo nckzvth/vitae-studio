@@ -15,10 +15,10 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "og-editor.png",
-        width: 1536,
-        height: 1024,
-        alt: "Vitae Studio with direct document editing, rich text controls, and draggable CV sections.",
+        url: "og.png",
+        width: 1731,
+        height: 909,
+        alt: "Vitae Studio turns structured CSV rows into a beautifully composed CV.",
       },
     ],
   },
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     title: "Vitae Studio",
     description:
       "Your experience, beautifully composed — privately in your browser.",
-    images: ["og-editor.png"],
+    images: ["og.png"],
   },
 };
 
