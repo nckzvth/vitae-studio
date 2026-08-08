@@ -201,15 +201,16 @@ function estimateHeaderHeight(project: Project) {
   const lineHeight = project.theme.bodySize * project.theme.lineHeight;
   const contactText = project.profile.contacts
     .map((contact) => contact.value)
+    .filter((value) => value.trim())
     .join(" · ");
-  const contactsHeight = Math.max(
-    12,
-    wrappedLines(contactText, charactersPerLine) * 12,
-  );
-  const summaryHeight = project.profile.summary
+  const titleHeight = project.profile.professionalTitle.trim() ? 29 : 0;
+  const contactsHeight = contactText
+    ? Math.max(12, wrappedLines(contactText, charactersPerLine) * 12)
+    : 0;
+  const summaryHeight = project.profile.summary?.trim()
     ? wrappedLines(project.profile.summary, charactersPerLine) * lineHeight + 13
     : 0;
-  return 29 + 29 + contactsHeight + summaryHeight + 23;
+  return 29 + titleHeight + contactsHeight + summaryHeight + 23;
 }
 
 export interface PaginationMeasurements {

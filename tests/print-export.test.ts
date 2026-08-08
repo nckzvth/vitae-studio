@@ -61,4 +61,15 @@ describe("direct PDF export", () => {
     expect(studioSource).toContain("contentEditable={editable || undefined}");
     expect(projectSource).toContain("PAGE_FLOW_SAFETY_PX");
   });
+
+  it("collapses the optional professional-title row during export", () => {
+    expect(studioSource).toContain(
+      "project.profile.professionalTitle.trim() ||",
+    );
+    expect(studioSource).toContain('wrapperClassName="profile-name"');
+    expect(cssSource).toContain(".profile-name + .contact-line");
+    expect(projectSource).toContain(
+      "project.profile.professionalTitle.trim() ? 29 : 0",
+    );
+  });
 });

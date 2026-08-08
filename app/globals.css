@@ -900,6 +900,9 @@ a:focus-visible {
   color: var(--doc-muted);
   font-size: 9px;
 }
+.profile-name + .contact-line {
+  margin-top: 8px;
+}
 .contact-line a {
   color: inherit;
   text-decoration: none;

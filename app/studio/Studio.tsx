@@ -1671,6 +1671,7 @@ function PaperPage({
         >
           <DirectText
             as="h1"
+            wrapperClassName="profile-name"
             value={project.profile.fullName}
             formatted={project.profile.formatting?.fullName}
             editable={editable}
@@ -1685,22 +1686,25 @@ function PaperPage({
               )
             }
           />
-          <DirectText
-            as="p"
-            value={project.profile.professionalTitle}
-            formatted={project.profile.formatting?.professionalTitle}
-            editable={editable}
-            label="professional title"
-            placeholder="Professional title"
-            onEditingChange={onEditingChange}
-            onChange={(plain, formatted) =>
-              onRichTextChange(
-                { kind: "profile", field: "professionalTitle" },
-                plain,
-                formatted,
-              )
-            }
-          />
+          {(project.profile.professionalTitle.trim() ||
+            (editable && profileSelected)) && (
+            <DirectText
+              as="p"
+              value={project.profile.professionalTitle}
+              formatted={project.profile.formatting?.professionalTitle}
+              editable={editable}
+              label="professional title"
+              placeholder="Professional title"
+              onEditingChange={onEditingChange}
+              onChange={(plain, formatted) =>
+                onRichTextChange(
+                  { kind: "profile", field: "professionalTitle" },
+                  plain,
+                  formatted,
+                )
+              }
+            />
+          )}
           <div className="contact-line">
             {project.profile.contacts
               .filter(
